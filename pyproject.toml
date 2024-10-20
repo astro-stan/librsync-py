@@ -1,13 +1,13 @@
 [project]
-name = "librsync"
+name = "librsync-py"
 version = "0.1.0" # Keep in sync with the Meson project version in meson.build
-description = "Python bindings for the libitc library"
+description = "Python bindings for the librsync library"
 readme = 'README.md'
 license = {file = 'LICENSE'}
-urls.repository = "https://github.com/astro-stan/librsync"
-urls.homepage = "https://github.com/astro-stan/librsync"
-urls.issues = "https://github.com/astro-stan/librsync/issues"
-urls.changelog = "https://github.com/astro-stan/librsync/releases"
+urls.repository = "https://github.com/astro-stan/librsync-py"
+urls.homepage = "https://github.com/astro-stan/librsync-py"
+urls.issues = "https://github.com/astro-stan/librsync-py/issues"
+urls.changelog = "https://github.com/astro-stan/librsync-py/releases"
 keywords = ["librsync", "rsync", "remote", "delta-compression", "sync"]
 classifiers = [
   "Development Status :: 4 - Beta",

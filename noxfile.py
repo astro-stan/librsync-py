@@ -29,7 +29,7 @@ def test(session: nox.Session) -> None:
     session.install(".", "pytest", "pytest-cov")
     # Run pytest from `coverage`, instead of the other way around as
     # otherwise `coverage` is being loaded late which skews the coverage results
-    session.run("coverage", "run", "-m", "pytest", "--cov=librsync-py", *session.posargs)
+    session.run("coverage", "run", "-m", "pytest", "--cov=librsync_py", *session.posargs)
 
 
 @nox.session(reuse_venv=True)

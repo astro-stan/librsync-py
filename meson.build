@@ -1,4 +1,4 @@
-project('librsync', 'c',
+project('librsync-py', 'c',
     version : '0.1.0',
     license: ['AGPL-3.0'],
     license_files: ['LICENSE'],
@@ -18,7 +18,7 @@ librsync_defines = {
     'BUILD_RDIFF': 'OFF',
 }
 
-pyitc_pyext_name = '_@0@'.format(meson.project_name())
+librsync_py_pyext_name = '_@0@'.format(meson.project_name())
 
 c_compiler = meson.get_compiler('c')
 python = import('python').find_installation(pure: false)
