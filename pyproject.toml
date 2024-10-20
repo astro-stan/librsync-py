@@ -1,0 +1,74 @@
+[project]
+name = "librsync"
+version = "0.1.0" # Keep in sync with the Meson project version in meson.build
+description = "Python bindings for the libitc library"
+readme = 'README.md'
+license = {file = 'LICENSE'}
+urls.repository = "https://github.com/astro-stan/librsync"
+urls.homepage = "https://github.com/astro-stan/librsync"
+urls.issues = "https://github.com/astro-stan/librsync/issues"
+urls.changelog = "https://github.com/astro-stan/librsync/releases"
+keywords = ["librsync", "rsync", "remote", "delta-compression", "sync"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Education",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+requires-python = '>=3.8' # Keep in sync with the classifiers above
+dependencies = [
+  "cffi>=1.16",
+  "typing-extensions; python_version<'3.11'",
+]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["E501", "D211", "D203", "D213", "ISC001", "COM812"]
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+# Avoid trying to fix flake8-bugbear (`B`) violations.
+unfixable = ["B"]
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.meson-python]
+# Tell meson-python the extension module contained in the Python package
+# targets the Python limited API.
+# This can be overridden by setting `python.allow_limited_api=false`
+limited-api = true
+
+[tool.meson-python.args]
+# CIBW will provide this option when appropriate to build ABI3 wheels
+# However, it can also be uncommeted here to always build ABI3 wheels.
+# setup = ["-Dpython.allow_limited_api=true"]
+# compile = []
+install = ['--skip-subprojects']
+dist = ['--include-subprojects']
+
+[build-system]
+requires = [
+  "meson-python>=0.16.0",
+  "meson>=1.5.0",
+  'ninja',
+  "cffi>=1.16",
+  "setuptools; python_version>='3.12'",
+]
+build-backend = 'mesonpy'
