@@ -1,4 +1,4 @@
-project('librsync-py', 'c',
+project('librsync_py', 'c',
     version : '0.1.0',
     license: ['AGPL-3.0'],
     license_files: ['LICENSE'],
@@ -51,7 +51,7 @@ librsync_pyext_preproccessing_c_args = [
     '-D__CLANG_STDINT_H', # Define for stdint.h on Xcode clang
 ]
 
-librsync_py_pyext_name = '_@0@'.format(meson.project_name().underscorify())
+librsync_py_pyext_name = '_@0@'.format(meson.project_name())
 
 c_compiler = meson.get_compiler('c')
 echo = find_program('echo', required: true)
