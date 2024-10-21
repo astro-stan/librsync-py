@@ -136,3 +136,10 @@ python.extension_module(
     # CFFI docs state 3.5+, but this module targets 3.8+.
     limited_api: '3.8',
 )
+
+python.install_sources(
+    files([
+        'src' / 'librsync_py'/ '__init__.py'
+    ]),
+    subdir: meson.project_name(),
+)
