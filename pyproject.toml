@@ -67,6 +67,7 @@ dist = ['--include-subprojects']
 requires = [
   "meson-python>=0.16.0",
   "meson>=1.5.0",
+  "cmake",
   'ninja',
   "cffi>=1.16",
   "setuptools; python_version>='3.12'",
