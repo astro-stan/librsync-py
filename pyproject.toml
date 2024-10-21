@@ -1,5 +1,5 @@
 [project]
-name = "librsync-py"
+name = "librsync_py"
 version = "0.1.0" # Keep in sync with the Meson project version in meson.build
 description = "Python bindings for the librsync library"
 readme = 'README.md'
