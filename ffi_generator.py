@@ -37,6 +37,12 @@ if __name__ == '__main__':
         required=True,
         help="The Pyext module name"
     )
+    argparser.add_argument(
+        "--module-header",
+        type=lambda x: validate_header_file(argparser, x),
+        required=True,
+        help="The Pyext module header"
+    )
 
     args = argparser.parse_args()
 
@@ -47,7 +53,7 @@ if __name__ == '__main__':
 
     ffibuilder.set_source(
         args.module_name,
-        '#include "librsync.h',
+        args.module_header.read_text(),
     )
 
     ffibuilder.distutils_extension('.')

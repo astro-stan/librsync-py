@@ -177,6 +177,8 @@ librsync_py_c = configure_file(
         ffi_generator_script,
         '--module-name',
         librsync_py_pyext_name,
+        '--module-header',
+        librsync_py_h.full_path(),
         '@INPUT@',
     ],
     input: header_pp_list,
