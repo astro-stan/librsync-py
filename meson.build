@@ -82,35 +82,42 @@ header_pp_config = {
     '_librsync_py_pp.h': {
         'source_header': librsync_py_h.full_path(),
         'clean_script_args': [
-            '--allowlist',
-            'librsync.h',
-            'time_t.h',
-            'types.h',
-            # 'hashtable.h',
-            # 'checksum.h',
-            'stdbool.h',
-            'job.h',
-            'mdfour.h',
-            # 'rollsum.h',
-            # 'rabinkarp.h',
+            '--header-allowlist',
+                'librsync.h',
+                'time_t.h',
+                'types.h',
+                'hashtable.h',
+                'checksum.h',
+                'stdbool.h',
+                'job.h',
+                'mdfour.h',
+                'rollsum.h',
+                'rabinkarp.h',
+
+            '--line-allowlist',
+                'rollsum.h:36:40',
+                'rabinkarp.h:56:60',
+                'hashtable.h:128:147',
+                'checksum.h:35:62',
+
         ]
     }
     # 'librsync_pp.h': {
     #     'source_header': librsync_inc_dir / 'librsync.h',
     #     'clean_script_args': [
-    #         '--allowlist', 'librsync.h', 'time_t.h', 'types.h'
+    #         '--header-allowlist', 'librsync.h', 'time_t.h', 'types.h'
     #     ]
     # },
     # 'sumset_pp.h': {
     #     'source_header': librsync_inc_dir / 'sumset.h',
     #     'clean_script_args': [
-    #         '--allowlist', 'sumset.h', 'hashtable.h', 'checksum.h', 'stdbool.h'
+    #         '--header-allowlist', 'sumset.h', 'hashtable.h', 'checksum.h', 'stdbool.h'
     #     ]
     # },
     # 'job_pp.h': {
     #     'source_header': librsync_inc_dir / 'job.h',
     #     'clean_script_args': [
-    #         '--allowlist', 'job.h', 'mdfour.h'
+    #         '--header-allowlist', 'job.h', 'mdfour.h'
     #     ]
     # },
 }
@@ -176,29 +183,29 @@ librsync_py_c = configure_file(
     output: '@0@.c'.format(librsync_py_pyext_name)
 )
 
-# # Compile the pyext
-# python.extension_module(
-#     librsync_py_pyext_name,
-#     librsync_py_c,
-#     dependencies: [
-#         librsync_dep,
-#     ],
-#     subdir: meson.project_name(),
-#     install: true,
-#     # CFFI uses the limited API when possible.
-#     # The exact rules for when this happens are a little muddy and depend
-#     # on both python and C preprocessor logic.
-#     # Define what the minimum supported limited API version is here, but toggle
-#     # whether it should be respected or ignored via the `python.allow_limited_api`
-#     # option.
-#     #
-#     # CFFI docs state 3.5+, but this module targets 3.8+.
-#     limited_api: '3.8',
-# )
+# Compile the pyext
+python.extension_module(
+    librsync_py_pyext_name,
+    librsync_py_c,
+    dependencies: [
+        librsync_dep,
+    ],
+    subdir: meson.project_name(),
+    install: true,
+    # CFFI uses the limited API when possible.
+    # The exact rules for when this happens are a little muddy and depend
+    # on both python and C preprocessor logic.
+    # Define what the minimum supported limited API version is here, but toggle
+    # whether it should be respected or ignored via the `python.allow_limited_api`
+    # option.
+    #
+    # CFFI docs state 3.5+, but this module targets 3.8+.
+    limited_api: '3.8',
+)
 
-# python.install_sources(
-#     files([
-#         'src' / 'librsync_py'/ '__init__.py'
-#     ]),
-#     subdir: meson.project_name(),
-# )
+python.install_sources(
+    files([
+        'src' / 'librsync_py'/ '__init__.py'
+    ]),
+    subdir: meson.project_name(),
+)

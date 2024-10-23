@@ -13,7 +13,7 @@ from pathlib import Path
 
 import cffi  # type: ignore[import-untyped]
 
-PREPROCESSED_FILE_LOCATION_DIRECTIVE_REGEX = re.compile(r"\s*#\s+\d+\s+\"((?:[\/\\][^\/\\]+)+)\"")
+PREPROCESSED_FILE_LOCATION_DIRECTIVE_REGEX = re.compile(r"\s*#\s+(\d+)\s+\"((?:[\/\\][^\/\\]+)+)\"")
 
 # if len(sys.argv) != 4:  # noqa: PLR2004
 #     msg = "Requires three arguments"
@@ -92,9 +92,38 @@ def validate_substitutions(parser, entry):
 
     return header_file, (re.compile(regex, flags=re.MULTILINE), substitution)
 
-def aggregate_allowlist(header_allowlist):
+def validate_line_allowlist(parser, entry):
+    entry = str(entry)
+
+    if entry.count(":") != 2:
+        parser.error("Invalid number of ':'. "
+                     "Expected '<header_name>:<from>:<to>'."
+                     "Use of an empy string for the `<header_name>` part "
+                     "is allowed."
+                     )
+        return
+
+    header_name, from_, to = entry.split(":")
+
+    if header_name:
+        if not header_name.endswith(".h"):
+            parser.error("Only header files ('.h') are allowed.")
+    else:
+        header_name = None
+
+    return header_name, (int(from_), int(to))
+
+
+def aggregate_header_allowlist(header_allowlist):
     result = {}
     for key, value in header_allowlist:
+        result.setdefault(key if key else '', set()).add(value)
+
+    return result
+
+def aggregate_line_allowlist(line_allowlist):
+    result = {}
+    for key, value in line_allowlist:
         result.setdefault(key if key else '', set()).add(value)
 
     return result
@@ -121,21 +150,46 @@ def is_header_allowed(header_path, header, allowlist):
 
     return False
 
-def process_header(header, header_allowlist, substitutions):
+def is_line_allowed(header, line, allowlist):
+    full_list = set()
+
+    for key, value in allowlist.items():
+        if not key or header.endswith(key):
+            full_list = full_list.union(value)
+
+    if not full_list:
+        return True
+
+    for from_, to in full_list:
+        if line >= from_ and (line <= to or to == -1):
+            return True
+
+    return False
+
+def process_header(header, header_allowlist, line_allowlist, substitutions):
     output = ""
 
-    # Apply the header whitelist rules
-    skipMode = False
+    # Apply the header and line allowlist rules
+    headerSkipMode = False
+    lineSkipMode = False
+    currentLineNum = 0
     for line in header.read_text().splitlines():
+        currentLineNum += 1
         match = PREPROCESSED_FILE_LOCATION_DIRECTIVE_REGEX.match(line)
         if match:
-            header_path = match.group(1)
+            currentLineNum = int(match.group(1)) - 1
+            header_path = match.group(2)
             if is_header_allowed(header_path, header, header_allowlist):
-                skipMode = False
+                headerSkipMode = False
             else:
-                skipMode = True
+                headerSkipMode = True
+        elif not headerSkipMode:
+            if is_line_allowed(header_path, currentLineNum, line_allowlist):
+                lineSkipMode = False
+            else:
+                lineSkipMode = True
 
-        if not skipMode:
+        if not headerSkipMode and not lineSkipMode:
             output += line + os.linesep
 
     # Apply the substitution rules
@@ -159,7 +213,7 @@ if __name__ == "__main__":
         "for which to generate FFI bindings",
     )
     argparser.add_argument(
-        "--allowlist",
+        "--header-allowlist",
         type=lambda x: validate_header_allowlist(argparser, x),
         nargs="+",
         required=False,
@@ -172,29 +226,44 @@ if __name__ == "__main__":
         "system or indirectly included headers.",
     )
     argparser.add_argument(
+        "--line-allowlist",
+        type=lambda x: validate_line_allowlist(argparser, x),
+        nargs="+",
+        required=False,
+        default={},
+        help="If provided - a list of line pairs (<from>:<to>) to keep from the input headers."
+        "All other output is discarted. This step is performed AFTER the the header allowlist step. "
+        "Can be specified in one of several ways. The format is: "
+        "`<header_name>:<from>:<to>`. `<header_name>` part is optional. If "
+        "`<header_name>` is not provided - the rule applies to all headers. "
+        "If `<to> == -1` means 'to the end of the file'. "
+        "Useful for removing noise from whitelisted headers.",
+    )
+    argparser.add_argument(
         "--substitutions",
         type=lambda x: validate_substitutions(argparser, x),
         nargs="+",
         required=False,
         default={},
         help="If provided - a list of regexes and substitutions to apply to the input headers."
-        "This step is performed AFTER the the header allowlist step. "
+        "This step is performed AFTER the the header and line allowlist steps. "
         "Can be specified in one of several ways. The format is: "
         "`<header_file>:<regex>:<substitution>`. `<header_file>` and `<substitution> "
         "parts are optional. If `<header_file>` is not provided - the regex applies "
         "to all imput files. If `<substitution>` is not provided - the matched "
-        "regex will be replaced with an empty string. Usung `:` as part of regex or "
+        "regex will be replaced with an empty string. Using `:` as part of regex or "
         "substitution is not allowed. The regexes are applied "
         "in the same order they are specified on the command line. "
         "Useful for removing noise from whitelisted headers.",
     )
     args = argparser.parse_args()
 
-    allowlist = aggregate_allowlist(args.allowlist)
+    header_allowlist = aggregate_header_allowlist(args.header_allowlist)
+    line_allowlist = aggregate_line_allowlist(args.line_allowlist)
     subsittutions = aggregate_substitutions(args.substitutions)
 
     ffibuilder = cffi.FFI()
 
     for header in args.headers:
-        output = process_header(header, allowlist, subsittutions)
+        output = process_header(header, header_allowlist, line_allowlist, subsittutions)
         header.write_text(output)
