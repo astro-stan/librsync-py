@@ -83,22 +83,26 @@ header_pp_config = {
         'source_header': librsync_py_h.full_path(),
         'clean_script_args': [
             '--header-allowlist',
-                'librsync.h',
+                # System headers
                 'time_t.h',
                 'types.h',
+                'stdbool.h',
+                # librsync headers
+                'librsync.h',
+                'sumset.h',
+                'job.h',
                 'hashtable.h',
                 'checksum.h',
-                'stdbool.h',
-                'job.h',
                 'mdfour.h',
                 'rollsum.h',
                 'rabinkarp.h',
 
             '--line-allowlist',
-                'rollsum.h:36:40',
-                'rabinkarp.h:56:60',
+                'sumset.h:35:86',
                 'hashtable.h:128:147',
                 'checksum.h:35:62',
+                'rollsum.h:36:40',
+                'rabinkarp.h:56:60',
 
         ]
     }
