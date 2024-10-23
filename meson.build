@@ -13,23 +13,30 @@ project('librsync_py', 'c',
         'python.allow_limited_api=false',
     ]
 )
+
 c_compiler = meson.get_compiler('c')
-python = import('python').find_installation(pure: false)
 cmake = import('cmake')
+python = import('python').find_installation(pure: false)
+# Script used to clean the preprocessed librsync headers
+header_cleaner_script = files('header_cleaner.py')
+# Script used to generate the pyext FFI interface
+ffi_generator_script = files('ffi_generator.py')
+# The path to the librsync include dir
+librsync_inc_dir = meson.current_source_dir() / 'vendor' / 'librsync' / 'src'
 
 librsync_py_pyext_name = '_@0@'.format(meson.project_name())
 librsync_py_pyext_c_name = '@0@.c'.format(librsync_py_pyext_name)
 librsync_py_pyext_h_name = '@0@.h'.format(librsync_py_pyext_name)
 
+# C_args to pass to cmake when building librsync
 librsync_cmake_defines = {
-    'NDEBUG': '1',
+    'NDEBUG': '1', # Discard assert macros
     'BUILD_RDIFF': 'OFF', # Do not build the `rdiff` target
     'BUILD_SHARED_LIBS':'OFF',
     'CMAKE_POSITION_INDEPENDENT_CODE': 'ON',
     'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization'),
     'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization'),
 }
-
 if get_option('debug') == true
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Debug'}
 else
@@ -50,21 +57,15 @@ librsync_pyext_preproccessing_c_args = [
     '-DLIBRSYNC_STATIC_DEFINE',
 ]
 
-# Script used to clean the preprocessed librsync headers
-header_cleaner_script = files('header_cleaner.py')
-# Script used to generate the Pyext FFI interface
-ffi_generator_script = files('ffi_generator.py')
-# The path to the librsync include dir
-librsync_inc_dir = meson.current_source_dir() / 'vendor' / 'librsync' / 'src'
-
 # The headers to be used when generating the Pyext FFI
+# Editing this may require editing the header_pp_config variable
 librsync_pyext_headers = [
     'librsync.h',
     'job.h',
     'sumset.h'
 ]
 
-# Create the pyext header
+# Generate the pyext header
 librsync_py_h = configure_file(
     command: [
         python,
@@ -74,10 +75,11 @@ librsync_py_h = configure_file(
             '#include "' + '"\n#include "'.join(librsync_pyext_headers) + '\"'
         )
     ],
-    output: librsync_py_pyext_h_name
+    output: librsync_py_pyext_h_name,
 )
 
 # Configuration for the preprocessing of the headers
+# Editing this may require editing librsync_pyext_headers
 header_pp_config = {
     '_librsync_py_pp.h': {
         'source_header': librsync_py_h.full_path(),
@@ -103,27 +105,8 @@ header_pp_config = {
                 'checksum.h:35:62',
                 'rollsum.h:36:40',
                 'rabinkarp.h:56:60',
-
-        ]
-    }
-    # 'librsync_pp.h': {
-    #     'source_header': librsync_inc_dir / 'librsync.h',
-    #     'clean_script_args': [
-    #         '--header-allowlist', 'librsync.h', 'time_t.h', 'types.h'
-    #     ]
-    # },
-    # 'sumset_pp.h': {
-    #     'source_header': librsync_inc_dir / 'sumset.h',
-    #     'clean_script_args': [
-    #         '--header-allowlist', 'sumset.h', 'hashtable.h', 'checksum.h', 'stdbool.h'
-    #     ]
-    # },
-    # 'job_pp.h': {
-    #     'source_header': librsync_inc_dir / 'job.h',
-    #     'clean_script_args': [
-    #         '--header-allowlist', 'job.h', 'mdfour.h'
-    #     ]
-    # },
+        ],
+    },
 }
 
 librsync_options = cmake.subproject_options()
