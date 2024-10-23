@@ -5,41 +5,49 @@
 # https://www.gnu.org/licenses/agpl-3.0.en.html
 """CFFI C ext code generator."""
 
-import re
-import sys
+import argparse
 from pathlib import Path
 
 import cffi  # type: ignore[import-untyped]
 
-if len(sys.argv) != 4:  # noqa: PLR2004
-    msg = "Requires three arguments"
-    raise RuntimeError(msg)
 
-time_header_file = Path(sys.argv[1])
-header_file = Path(sys.argv[2])
-module_name = sys.argv[3]
+def validate_header_file(parser, entry):
+    entry = Path(entry)
 
-ffibuilder = cffi.FFI()
+    if entry.exists() and entry.is_file() and str(entry).endswith(".h"):
+        return entry.absolute()
 
-# Contains the preprocessed contents of the standard time.h header
-time_h_contents = time_header_file.read_text()
+    parser.error(f"'{entry}' does not exist or is not a valid header file.")
 
-# Extract only the definition of the `time_t` type from GCC time.h
-# implemenatation on linux
-time_t_typedef = re.sub(
-    r"^(?!.*typedef\s+.*time_t\s*;\n).*",
-    "",
-    time_h_contents,
-    flags=re.MULTILINE,
-)
+if __name__ == '__main__':
+    argparser = argparse.ArgumentParser()
+    argparser = argparse.ArgumentParser(
+        description="Pyext FFI generator for librsync",
+    )
+    argparser.add_argument(
+        "headers",
+        type=lambda x: validate_header_file(argparser, x),
+        nargs="+",
+        help="Preprocessed header files containing definitions "
+        "for which to generate FFI bindings",
+    )
+    argparser.add_argument(
+        "--module-name",
+        type=str,
+        required=True,
+        help="The Pyext module name"
+    )
 
-ffibuilder.cdef(time_t_typedef)
-ffibuilder.cdef(header_file.read_text())
+    args = argparser.parse_args()
 
-ffibuilder.set_source(
-    module_name,
-    '#include "librsync.h"',
-)
+    ffibuilder = cffi.FFI()
 
-if __name__ == "__main__":
-    ffibuilder.distutils_extension(".")
+    for header in args.headers:
+        ffibuilder.cdef(header.read_text())
+
+    ffibuilder.set_source(
+        args.module_name,
+        '#include "librsync.h',
+    )
+
+    ffibuilder.distutils_extension('.')

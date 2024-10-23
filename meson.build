@@ -1,5 +1,5 @@
 project('librsync_py', 'c',
-    version : '0.1.0',
+    version : '0.1.0', # Keep in sync with the version in pyproject.toml
     license: ['AGPL-3.0'],
     license_files: ['LICENSE'],
     meson_version: '>=1.4.0',
@@ -13,8 +13,16 @@ project('librsync_py', 'c',
         'python.allow_limited_api=false',
     ]
 )
+c_compiler = meson.get_compiler('c')
+python = import('python').find_installation(pure: false)
+cmake = import('cmake')
+
+librsync_py_pyext_name = '_@0@'.format(meson.project_name())
+librsync_py_pyext_c_name = '@0@.c'.format(librsync_py_pyext_name)
+librsync_py_pyext_h_name = '@0@.h'.format(librsync_py_pyext_name)
 
 librsync_cmake_defines = {
+    'NDEBUG': '1',
     'BUILD_RDIFF': 'OFF', # Do not build the `rdiff` target
     'BUILD_SHARED_LIBS':'OFF',
     'CMAKE_POSITION_INDEPENDENT_CODE': 'ON',
@@ -28,14 +36,8 @@ else
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Release'}
 endif
 
-librsync_cmake_defines_list = []
-# Aggregate defines
-foreach name, value: librsync_cmake_defines
-    librsync_cmake_defines_list += ['-D' + name + '=' + value]
-endforeach
-
-# A set of defines to pass to the preprocessor when generating the librsync_py C ext
-# code with CFFI. These are used to fool the preprocessor that certain system
+# A set of defines to pass to the preprocessor when preprocessing the librsync
+# headers. These are used to fool the preprocessor that certain system
 # headers have already been included and preprocessed (when in fact they haven't).
 #
 # The goal is to reduce the unrelevant noise present in the outputted headers
@@ -46,26 +48,73 @@ librsync_pyext_preproccessing_c_args = [
      # inside `librsync_export.h`. This is needed when preprocessing with
      # pycparser, as it doesn't currently support `__attribute__` directives.
     '-DLIBRSYNC_STATIC_DEFINE',
-
-    '-D_STDIO_H', # Define for stdio.h on gcc
-    '-D_STDIO_H_', # Define for stdio.h on Xcode clang
-
-    # '-D_TIME_H', # Define for time.h on gcc
-    # '-D_TIME_H_', # Define for time.h on Xcode clang
-
-    '-D_GCC_WRAP_STDINT_H', # Define for stdint.h on mingw64
-    '-D__CLANG_STDINT_H', # Define for stdint.h on Xcode clang
 ]
 
-librsync_py_pyext_name = '_@0@'.format(meson.project_name())
-
-c_compiler = meson.get_compiler('c')
-echo = find_program('echo', required: true)
-python = import('python').find_installation(pure: false)
+# Script used to clean the preprocessed librsync headers
 header_cleaner_script = files('header_cleaner.py')
-# ffi_generator_script = files('ffi_generator.py')
+# Script used to generate the Pyext FFI interface
+ffi_generator_script = files('ffi_generator.py')
+# The path to the librsync include dir
+librsync_inc_dir = meson.current_source_dir() / 'vendor' / 'librsync' / 'src'
 
-cmake = import('cmake')
+# The headers to be used when generating the Pyext FFI
+librsync_pyext_headers = [
+    'librsync.h',
+    'job.h',
+    'sumset.h'
+]
+
+# Create the pyext header
+librsync_py_h = configure_file(
+    command: [
+        python,
+        '-c',
+        'from pathlib import Path; Path("""@0@""").write_text("""@1@""")'.format(
+            librsync_py_pyext_h_name,
+            '#include "' + '"\n#include "'.join(librsync_pyext_headers) + '\"'
+        )
+    ],
+    output: librsync_py_pyext_h_name
+)
+
+# Configuration for the preprocessing of the headers
+header_pp_config = {
+    '_librsync_py_pp.h': {
+        'source_header': librsync_py_h.full_path(),
+        'clean_script_args': [
+            '--allowlist',
+            'librsync.h',
+            'time_t.h',
+            'types.h',
+            # 'hashtable.h',
+            # 'checksum.h',
+            'stdbool.h',
+            'job.h',
+            'mdfour.h',
+            # 'rollsum.h',
+            # 'rabinkarp.h',
+        ]
+    }
+    # 'librsync_pp.h': {
+    #     'source_header': librsync_inc_dir / 'librsync.h',
+    #     'clean_script_args': [
+    #         '--allowlist', 'librsync.h', 'time_t.h', 'types.h'
+    #     ]
+    # },
+    # 'sumset_pp.h': {
+    #     'source_header': librsync_inc_dir / 'sumset.h',
+    #     'clean_script_args': [
+    #         '--allowlist', 'sumset.h', 'hashtable.h', 'checksum.h', 'stdbool.h'
+    #     ]
+    # },
+    # 'job_pp.h': {
+    #     'source_header': librsync_inc_dir / 'job.h',
+    #     'clean_script_args': [
+    #         '--allowlist', 'job.h', 'mdfour.h'
+    #     ]
+    # },
+}
+
 librsync_options = cmake.subproject_options()
 librsync_options.add_cmake_defines(librsync_cmake_defines)
 librsync_proj = cmake.subproject(
@@ -75,28 +124,14 @@ librsync_proj = cmake.subproject(
 # message(librsync_proj.target_list())
 librsync_dep = librsync_proj.dependency('rsync')
 
-librsync_inc_dir = meson.current_source_dir() / 'vendor' / 'librsync' / 'src'
+# Build the cmake defines dict as a list
+librsync_cmake_defines_as_list = []
+foreach name, value: librsync_cmake_defines
+    librsync_cmake_defines_as_list += ['-D' + name + '=' + value]
+endforeach
 
-header_pp_config = {
-    'librsync_pp.h': {
-        'source_header': librsync_inc_dir / 'librsync.h',
-        'clean_script_args': [
-            '--allowlist', 'librsync.h', 'time_t.h', 'types.h'
-        ]
-    },
-    'job_pp.h': {
-        'source_header': librsync_inc_dir / 'job.h',
-        'clean_script_args': [
-            '--allowlist', 'job.h'
-        ]
-    },
-    'sumset_pp.h': {
-        'source_header': librsync_inc_dir / 'sumset.h',
-        'clean_script_args': [
-            '--allowlist', 'sumset.h'
-        ]
-    },
-}
+# The preprocessed header objects
+header_pp_list = []
 
 foreach header_pp_name, config: header_pp_config
     # Preprocess header
@@ -106,7 +141,7 @@ foreach header_pp_name, config: header_pp_config
             '-I@0@'.format(librsync_inc_dir),
             '-E',
             librsync_pyext_preproccessing_c_args,
-            librsync_cmake_defines_list,
+            librsync_cmake_defines_as_list,
             config['source_header'],
         ],
         capture: true,
@@ -124,85 +159,27 @@ foreach header_pp_name, config: header_pp_config
         input: [header_pp],
         output: header_pp_name,
     )
+
+    header_pp_list += [header_pp]
 endforeach
 
-# # Preprocess librsync.h
-# librsync_h_pp = configure_file(
-#     command: [
-#         c_compiler,
-#         '-I@0@'.format(librsync_inc_dir),
-#         '-E',
-#         librsync_pyext_preproccessing_c_args,
-#         librsync_header,
-#     ],
-#     capture: true,
-#     output: 'librsync_pp.h',
-# )
-
-# # Preprocess job.h
-# librsync_job_h_pp = configure_file(
-#     command: [
-#         c_compiler,
-#         '-I@0@'.format(librsync_inc_dir),
-#         '-E',
-#         librsync_pyext_preproccessing_c_args,
-#         librsync_job_header,
-#     ],
-#     output: 'job_pp.h',
-#     capture: true,
-# )
-
-# # Preprocess sumset.h
-# librsync_sumset_h_pp = configure_file(
-#     command: [
-#         c_compiler,
-#         '-I@0@'.format(librsync_inc_dir),
-#         '-E',
-#         librsync_pyext_preproccessing_c_args,
-#         librsync_sumset_header,
-#     ],
-#     output: 'sumset_pp.h',
-#     capture: true,
-# )
-
-# # Clean preprocessed librsync_pp.h
-# librsync_py_src = configure_file(
-#     command: [
-#         python,
-#         header_cleaner_script,
-#         '@INPUT@',
-#         '--allowlist',
-#         'librsync.h',
-#         'time_t.h',
-#         'types.h',
-#     ],
-#     input: [librsync_h_pp],
-#     output: 'librsync_pp.h',
-# )
-
-# # Generate the pyext interface using CFFI
-# librsync_py_src = configure_file(
-#     command: [
-#         python,
-#         ffi_generator_script,
-#         '--update-files',
-#         '--module-name',
-#         librsync_py_pyext_name,
-#         '@INPUT@',
-#         '--header-allowlist',
-#         'sumset.h',
-#         'job.h',
-#         '@0@:librsync.h'.format(librsync_h_pp),
-#         '@0@:time.h'.format(librsync_h_pp),
-#     ],
-#     input: [librsync_h_pp, librsync_job_h_pp, librsync_sumset_h_pp],
-#     output: '@0@.c'.format(librsync_py_pyext_name)
-# )
+# Generate the pyext interface using CFFI
+librsync_py_c = configure_file(
+    command: [
+        python,
+        ffi_generator_script,
+        '--module-name',
+        librsync_py_pyext_name,
+        '@INPUT@',
+    ],
+    input: header_pp_list,
+    output: '@0@.c'.format(librsync_py_pyext_name)
+)
 
 # # Compile the pyext
 # python.extension_module(
 #     librsync_py_pyext_name,
-#     librsync_py_src,
+#     librsync_py_c,
 #     dependencies: [
 #         librsync_dep,
 #     ],

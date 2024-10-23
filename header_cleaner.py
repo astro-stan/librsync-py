@@ -149,7 +149,7 @@ def process_header(header, header_allowlist, substitutions):
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
-        description="FFI generator for librsync",
+        description="Header cleaner for librsync",
     )
     argparser.add_argument(
         "headers",
