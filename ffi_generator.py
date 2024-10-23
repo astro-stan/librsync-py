@@ -28,20 +28,20 @@ if __name__ == '__main__':
         "headers",
         type=lambda x: validate_header_file(argparser, x),
         nargs="+",
-        help="Preprocessed header files containing definitions "
-        "for which to generate FFI bindings",
+        help="The preprocessed header files containing definitions "
+        "for which to generate FFI bindings.",
     )
     argparser.add_argument(
         "--module-name",
         type=str,
         required=True,
-        help="The Pyext module name"
+        help="The Pyext module name."
     )
     argparser.add_argument(
         "--module-header",
         type=lambda x: validate_header_file(argparser, x),
         required=True,
-        help="The Pyext module header"
+        help="The Pyext module header."
     )
 
     args = argparser.parse_args()

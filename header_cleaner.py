@@ -1,49 +1,15 @@
 #!/usr/bin/env python3
 #
-# Copyright (c) 2024 pyitc project. Released under AGPL-3.0
+# Copyright (c) 2024 librsync_py project. Released under AGPL-3.0
 # license. Refer to the LICENSE file for details or visit:
 # https://www.gnu.org/licenses/agpl-3.0.en.html
-"""CFFI C ext code generator."""
+"""Header cleaner for librsync."""
 
 import argparse
 import os
 import re
-import sys
 from pathlib import Path
 
-import cffi  # type: ignore[import-untyped]
-
-PREPROCESSED_FILE_LOCATION_DIRECTIVE_REGEX = re.compile(r"\s*#\s+(\d+)\s+\"((?:[\/\\][^\/\\]+)+)\"")
-
-# if len(sys.argv) != 4:  # noqa: PLR2004
-#     msg = "Requires three arguments"
-#     raise RuntimeError(msg)
-
-
-# time_header_file = Path(sys.argv[1])
-# header_file = Path(sys.argv[2])
-# module_name = sys.argv[3]
-
-
-# # Contains the preprocessed contents of the standard time.h header
-# time_h_contents = time_header_file.read_text()
-
-# # Extract only the definition of the `time_t` type from GCC time.h
-# # implemenatation on linux
-# time_t_typedef = re.sub(
-#     r"^(?!.*typedef\s+.*time_t\s*;\n).*",
-#     "",
-#     time_h_contents,
-#     flags=re.MULTILINE,
-# )
-
-# ffibuilder.cdef(time_t_typedef)
-# ffibuilder.cdef(header_file.read_text())
-
-# ffibuilder.set_source(
-#     module_name,
-#     '#include "librsync.h"',
-# )
 
 def validate_header_file(parser, entry):
     entry = Path(entry)
@@ -113,24 +79,9 @@ def validate_line_allowlist(parser, entry):
 
     return header_name, (int(from_), int(to))
 
-
-def aggregate_header_allowlist(header_allowlist):
+def aggregate_options(options):
     result = {}
-    for key, value in header_allowlist:
-        result.setdefault(key if key else '', set()).add(value)
-
-    return result
-
-def aggregate_line_allowlist(line_allowlist):
-    result = {}
-    for key, value in line_allowlist:
-        result.setdefault(key if key else '', set()).add(value)
-
-    return result
-
-def aggregate_substitutions(substitutions):
-    result = {}
-    for key, value in substitutions:
+    for key, value in options:
         result.setdefault(key if key else '', set()).add(value)
 
     return result
@@ -167,6 +118,11 @@ def is_line_allowed(header, line, allowlist):
     return False
 
 def process_header(header, header_allowlist, line_allowlist, substitutions):
+    # Matches strings like:
+    # `# 27 "/usr/include/x86_64-linux-gnu/bits/types.h"`
+    # With capture groups for the line number and file path
+    file_location_directive_regex = re.compile(r"\s*#\s+(\d+)\s+\"((?:[\/\\][^\/\\]+)+)\"")
+
     output = ""
 
     # Apply the header and line allowlist rules
@@ -175,7 +131,7 @@ def process_header(header, header_allowlist, line_allowlist, substitutions):
     currentLineNum = 0
     for line in header.read_text().splitlines():
         currentLineNum += 1
-        match = PREPROCESSED_FILE_LOCATION_DIRECTIVE_REGEX.match(line)
+        match = file_location_directive_regex.match(line)
         if match:
             currentLineNum = int(match.group(1)) - 1
             header_path = match.group(2)
@@ -192,7 +148,7 @@ def process_header(header, header_allowlist, line_allowlist, substitutions):
         if not headerSkipMode and not lineSkipMode:
             output += line + os.linesep
 
-    # Apply the substitution rules
+    # Apply the regex substitution rules
     all_substitution_rules = substitutions.get('', set()).union(subsittutions.get(str(header), set()))
     for regex, sub in all_substitution_rules:
         output = regex.sub(sub, output)
@@ -210,7 +166,7 @@ if __name__ == "__main__":
         type=lambda x: validate_header_file(argparser, x),
         nargs="+",
         help="Preprocessed header files containing definitions "
-        "for which to generate FFI bindings",
+        "for which to generate FFI bindings.",
     )
     argparser.add_argument(
         "--header-allowlist",
@@ -258,11 +214,9 @@ if __name__ == "__main__":
     )
     args = argparser.parse_args()
 
-    header_allowlist = aggregate_header_allowlist(args.header_allowlist)
-    line_allowlist = aggregate_line_allowlist(args.line_allowlist)
-    subsittutions = aggregate_substitutions(args.substitutions)
-
-    ffibuilder = cffi.FFI()
+    header_allowlist = aggregate_options(args.header_allowlist)
+    line_allowlist = aggregate_options(args.line_allowlist)
+    subsittutions = aggregate_options(args.substitutions)
 
     for header in args.headers:
         output = process_header(header, header_allowlist, line_allowlist, subsittutions)
