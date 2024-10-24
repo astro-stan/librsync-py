@@ -15,16 +15,18 @@ from pathlib import Path
 
 def validate_header_file(parser: ArgumentParser, entry: str) -> None | Path:
     """Validate the header file arg."""
-    entry: Path = Path(entry)
+    path = Path(entry)
 
-    if entry.exists() and entry.is_file() and str(entry).endswith(".h"):
-        return entry.absolute()
+    if path.exists() and path.is_file() and str(path).endswith(".h"):
+        return path.absolute()
 
-    parser.error(f"'{entry}' does not exist or is not a valid header file.")
+    parser.error(f"'{path}' does not exist or is not a valid header file.")
     return None
 
 
-def validate_header_allowlist(parser: ArgumentParser, entry: str) -> None | tuple[str, str]:
+def validate_header_allowlist(
+    parser: ArgumentParser, entry: str
+) -> None | tuple[str | None, str]:
     """Validate the header allowlist option."""
     entry = str(entry)
 
@@ -47,9 +49,9 @@ def validate_header_allowlist(parser: ArgumentParser, entry: str) -> None | tupl
 
 def validate_substitutions(
     parser: ArgumentParser, entry: str
-) -> None | tuple[str, tuple[re.Pattern, str]]:
+) -> None | tuple[str | None, tuple[re.Pattern, str]]:
     """Validate the substitution option."""
-    if entry.count(":") != 2:# noqa: PLR2004
+    if entry.count(":") != 2:  # noqa: PLR2004
         parser.error(
             "Invalid number of ':'. "
             "Expected '<header_file>:<regex>:<substitution>'."
@@ -58,6 +60,7 @@ def validate_substitutions(
         )
         return None
 
+    header_file: str | None
     header_file, regex, substitution = entry.split(":")
 
     if header_file:
@@ -70,7 +73,7 @@ def validate_substitutions(
 
 def validate_line_allowlist(
     parser: ArgumentParser, entry: str
-) -> None | tuple[str, tuple[int, int]]:
+) -> None | tuple[str | None, tuple[int, int]]:
     """Validate the line allowlist option."""
     if entry.count(":") != 2:  # noqa: PLR2004
         parser.error(
@@ -81,6 +84,7 @@ def validate_line_allowlist(
         )
         return None
 
+    header_name: str | None
     header_name, from_, to = entry.split(":")
 
     if header_name:
@@ -94,9 +98,9 @@ def validate_line_allowlist(
 
 def aggregate_options(options: tuple[str, tuple | str]) -> dict[str, set]:
     """Group the options given on the command line."""
-    result: dict[str | Path, set] = {}
-    for key, value in options:
-        result.setdefault(key if key else "", set()).add(value)
+    result: dict[str, set] = {}
+    for opt in options:
+        result.setdefault(opt[0] if opt[0] else "", set()).add(opt[1])
 
     return result
 
@@ -118,10 +122,10 @@ def _is_header_allowed(
 
 def _is_line_allowed(header: str, line: int, allowlist: dict[str, set]) -> bool:
     """Check if a line in a header is allowlisted."""
-    full_list = set()
+    full_list: set = set()
 
     for key, value in allowlist.items():
-        if not key or header.endswith(key):
+        if not key or header.endswith(str(key)):
             full_list = full_list.union(value)
 
     if not full_list:

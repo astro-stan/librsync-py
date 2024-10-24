@@ -4,6 +4,7 @@
 # license. Refer to the LICENSE file for details or visit:
 # https://www.gnu.org/licenses/agpl-3.0.en.html
 """CFFI C ext code generator."""
+
 from __future__ import annotations
 
 from argparse import ArgumentParser
@@ -14,12 +15,12 @@ import cffi  # type: ignore[import-untyped]
 
 def validate_header_file(parser: ArgumentParser, entry: str) -> None | Path:
     """Validate the header file arg."""
-    entry: Path = Path(entry)
+    path = Path(entry)
 
-    if entry.exists() and entry.is_file() and str(entry).endswith(".h"):
-        return entry.absolute()
+    if path.exists() and path.is_file() and str(path).endswith(".h"):
+        return path.absolute()
 
-    parser.error(f"'{entry}' does not exist or is not a valid header file.")
+    parser.error(f"'{path}' does not exist or is not a valid header file.")
     return None
 
 
