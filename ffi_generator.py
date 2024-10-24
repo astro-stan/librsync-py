@@ -4,24 +4,27 @@
 # license. Refer to the LICENSE file for details or visit:
 # https://www.gnu.org/licenses/agpl-3.0.en.html
 """CFFI C ext code generator."""
+from __future__ import annotations
 
-import argparse
+from argparse import ArgumentParser
 from pathlib import Path
 
 import cffi  # type: ignore[import-untyped]
 
 
-def validate_header_file(parser, entry):
-    entry = Path(entry)
+def validate_header_file(parser: ArgumentParser, entry: str) -> None | Path:
+    """Validate the header file arg."""
+    entry: Path = Path(entry)
 
     if entry.exists() and entry.is_file() and str(entry).endswith(".h"):
         return entry.absolute()
 
     parser.error(f"'{entry}' does not exist or is not a valid header file.")
+    return None
 
-if __name__ == '__main__':
-    argparser = argparse.ArgumentParser()
-    argparser = argparse.ArgumentParser(
+
+if __name__ == "__main__":
+    argparser = ArgumentParser(
         description="Pyext FFI generator for librsync",
     )
     argparser.add_argument(
@@ -32,16 +35,13 @@ if __name__ == '__main__':
         "for which to generate FFI bindings.",
     )
     argparser.add_argument(
-        "--module-name",
-        type=str,
-        required=True,
-        help="The Pyext module name."
+        "--module-name", type=str, required=True, help="The Pyext module name."
     )
     argparser.add_argument(
         "--module-header",
         type=lambda x: validate_header_file(argparser, x),
         required=True,
-        help="The Pyext module header."
+        help="The Pyext module header.",
     )
 
     args = argparser.parse_args()
@@ -56,4 +56,4 @@ if __name__ == '__main__':
         args.module_header.read_text(),
     )
 
-    ffibuilder.distutils_extension('.')
+    ffibuilder.distutils_extension(".")

@@ -5,26 +5,32 @@
 # https://www.gnu.org/licenses/agpl-3.0.en.html
 """Header cleaner for librsync."""
 
-import argparse
+from __future__ import annotations
+
 import os
 import re
+from argparse import ArgumentParser
 from pathlib import Path
 
 
-def validate_header_file(parser, entry):
-    entry = Path(entry)
+def validate_header_file(parser: ArgumentParser, entry: str) -> None | Path:
+    """Validate the header file arg."""
+    entry: Path = Path(entry)
 
     if entry.exists() and entry.is_file() and str(entry).endswith(".h"):
         return entry.absolute()
 
     parser.error(f"'{entry}' does not exist or is not a valid header file.")
+    return None
 
-def validate_header_allowlist(parser, entry):
+
+def validate_header_allowlist(parser: ArgumentParser, entry: str) -> None | tuple[str, str]:
+    """Validate the header allowlist option."""
     entry = str(entry)
 
     if entry.count(":") > 1:
         parser.error("Too many ':'.")
-        return
+        return None
 
     header_file = None
     if ":" in entry:
@@ -38,16 +44,19 @@ def validate_header_allowlist(parser, entry):
 
     return header_file, whitelisted_header
 
-def validate_substitutions(parser, entry):
-    entry = str(entry)
 
-    if entry.count(":") != 2:
-        parser.error("Invalid number of ':'. "
-                     "Expected '<header_file>:<regex>:<substitution>'."
-                     "Use of empy strings for the `<header_file>` and "
-                     "`<substitution>` parts is allowed."
-                     )
-        return
+def validate_substitutions(
+    parser: ArgumentParser, entry: str
+) -> None | tuple[str, tuple[re.Pattern, str]]:
+    """Validate the substitution option."""
+    if entry.count(":") != 2:# noqa: PLR2004
+        parser.error(
+            "Invalid number of ':'. "
+            "Expected '<header_file>:<regex>:<substitution>'."
+            "Use of empy strings for the `<header_file>` and "
+            "`<substitution>` parts is allowed."
+        )
+        return None
 
     header_file, regex, substitution = entry.split(":")
 
@@ -58,16 +67,19 @@ def validate_substitutions(parser, entry):
 
     return header_file, (re.compile(regex, flags=re.MULTILINE), substitution)
 
-def validate_line_allowlist(parser, entry):
-    entry = str(entry)
 
-    if entry.count(":") != 2:
-        parser.error("Invalid number of ':'. "
-                     "Expected '<header_name>:<from>:<to>'."
-                     "Use of an empy string for the `<header_name>` part "
-                     "is allowed."
-                     )
-        return
+def validate_line_allowlist(
+    parser: ArgumentParser, entry: str
+) -> None | tuple[str, tuple[int, int]]:
+    """Validate the line allowlist option."""
+    if entry.count(":") != 2:  # noqa: PLR2004
+        parser.error(
+            "Invalid number of ':'. "
+            "Expected '<header_name>:<from>:<to>'."
+            "Use of an empy string for the `<header_name>` part "
+            "is allowed."
+        )
+        return None
 
     header_name, from_, to = entry.split(":")
 
@@ -79,15 +91,21 @@ def validate_line_allowlist(parser, entry):
 
     return header_name, (int(from_), int(to))
 
-def aggregate_options(options):
-    result = {}
+
+def aggregate_options(options: tuple[str, tuple | str]) -> dict[str, set]:
+    """Group the options given on the command line."""
+    result: dict[str | Path, set] = {}
     for key, value in options:
-        result.setdefault(key if key else '', set()).add(value)
+        result.setdefault(key if key else "", set()).add(value)
 
     return result
 
-def is_header_allowed(header_path, header, allowlist):
-    default_allowlist = allowlist.get('', set())
+
+def _is_header_allowed(
+    header_path: str, header: Path, allowlist: dict[str, set]
+) -> bool:
+    """Check if a header is allowlisted."""
+    default_allowlist = allowlist.get("", set())
     header_allowlist = allowlist.get(str(header), set())
 
     full_list = default_allowlist.union(header_allowlist)
@@ -95,13 +113,11 @@ def is_header_allowed(header_path, header, allowlist):
     if not full_list:
         return True
 
-    for entry in full_list:
-        if str(header_path).endswith(entry):
-            return True
+    return any(str(header_path).endswith(entry) for entry in full_list)
 
-    return False
 
-def is_line_allowed(header, line, allowlist):
+def _is_line_allowed(header: str, line: int, allowlist: dict[str, set]) -> bool:
+    """Check if a line in a header is allowlisted."""
     full_list = set()
 
     for key, value in allowlist.items():
@@ -111,54 +127,60 @@ def is_line_allowed(header, line, allowlist):
     if not full_list:
         return True
 
-    for from_, to in full_list:
-        if line >= from_ and (line <= to or to == -1):
-            return True
+    return any(line >= from_ and (line <= to or to == -1) for from_, to in full_list)
 
-    return False
 
-def process_header(header, header_allowlist, line_allowlist, substitutions):
+def process_header(
+    header: Path,
+    header_allowlist: dict[str, set],
+    line_allowlist: dict[str, set],
+    substitutions: dict[str, set],
+) -> str:
+    """Process a single header."""
     # Matches strings like:
     # `# 27 "/usr/include/x86_64-linux-gnu/bits/types.h"`
     # With capture groups for the line number and file path
-    file_location_directive_regex = re.compile(r"\s*#\s+(\d+)\s+\"((?:[\/\\][^\/\\]+)+)\"")
+    file_location_directive_regex = re.compile(
+        r"\s*#\s+(\d+)\s+\"((?:[\/\\][^\/\\]+)+)\""
+    )
 
     output = ""
 
     # Apply the header and line allowlist rules
-    headerSkipMode = False
-    lineSkipMode = False
-    currentLineNum = 0
+    header_skip_mode = False
+    line_skip_mode = False
+    current_line_num = 0
     for line in header.read_text().splitlines():
-        currentLineNum += 1
+        current_line_num += 1
         match = file_location_directive_regex.match(line)
         if match:
-            currentLineNum = int(match.group(1)) - 1
+            current_line_num = int(match.group(1)) - 1
             header_path = match.group(2)
-            if is_header_allowed(header_path, header, header_allowlist):
-                headerSkipMode = False
+            if _is_header_allowed(header_path, header, header_allowlist):
+                header_skip_mode = False
             else:
-                headerSkipMode = True
-        elif not headerSkipMode:
-            if is_line_allowed(header_path, currentLineNum, line_allowlist):
-                lineSkipMode = False
+                header_skip_mode = True
+        elif not header_skip_mode:
+            if _is_line_allowed(header_path, current_line_num, line_allowlist):
+                line_skip_mode = False
             else:
-                lineSkipMode = True
+                line_skip_mode = True
 
-        if not headerSkipMode and not lineSkipMode:
+        if not header_skip_mode and not line_skip_mode:
             output += line + os.linesep
 
     # Apply the regex substitution rules
-    all_substitution_rules = substitutions.get('', set()).union(subsittutions.get(str(header), set()))
+    all_substitution_rules = substitutions.get("", set()).union(
+        subsittutions.get(str(header), set())
+    )
     for regex, sub in all_substitution_rules:
         output = regex.sub(sub, output)
 
     return output
 
 
-
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(
+    argparser = ArgumentParser(
         description="Header cleaner for librsync",
     )
     argparser.add_argument(
