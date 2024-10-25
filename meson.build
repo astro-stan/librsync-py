@@ -194,7 +194,16 @@ python.extension_module(
 
 python.install_sources(
     files([
-        'src' / 'librsync_py'/ '__init__.py'
+        'src' / 'librsync_py'/ '__init__.py',
+        'src' / 'librsync_py'/ 'exceptions.py',
     ]),
     subdir: meson.project_name(),
+)
+
+python.install_sources(
+    files([
+        'src' / 'librsync_py'/ '_internals' / '__init__.py',
+        'src' / 'librsync_py'/ '_internals' / 'wrappers.py',
+    ]),
+    subdir: meson.project_name() / '_internals',
 )
