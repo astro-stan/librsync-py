@@ -13,13 +13,16 @@ else:  # pragma: no cover
     from typing import Self
 
 try:
-    from librsync_py._librsync_py import \
-        ffi as _ffi  # type: ignore[import-untyped] # noqa: F401
-    from librsync_py._librsync_py import \
-        lib as _lib  # type: ignore[import-untyped] # noqa: F401
+    from librsync_py._librsync_py import (
+        ffi as _ffi,  # type: ignore[import-untyped] # noqa: F401
+    )
+    from librsync_py._librsync_py import (
+        lib as _lib,  # type: ignore[import-untyped]
+    )
 except ImportError as exc:  # pragma: no cover
     msg = "librsync_py C extension import failed, cannot use C-API"
     raise ImportError(msg) from exc
+
 
 class RsResult(IntEnum):
     DONE = (cast(int, _lib.RS_DONE), "Completed successfully")

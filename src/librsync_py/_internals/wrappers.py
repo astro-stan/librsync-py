@@ -18,6 +18,7 @@ class RsDeltaMagic(IntEnum):
 
     Used to differentiate the type of data contained in the file.
     """
+
     DELTA = cast(int, _lib.RS_DELTA_MAGIC)
     """A delta file."""
 
@@ -54,7 +55,6 @@ class RsSignatureMagic(IntEnum):
     """
 
 
-
 def _handle_rs_result(
     result: int | RsResult,
     *,
@@ -72,7 +72,6 @@ def _handle_rs_result(
     :rtype: RsResult
     :raises ItcCApiError: The appropriate exception subclass for the given RsResult
     """
-
     if result == RsResult.DONE:
         return RsResult(result)
 
