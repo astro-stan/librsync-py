@@ -125,7 +125,10 @@ def get_sig_args(
     else:
         sig_magic_p = _ffi.new("rs_magic_number *", sig_magic)
         block_length_p = _ffi.new("size_t *", block_length)
-        hash_length_p = _ffi.new("size_t *", hash_length)
+        if hash_length >= 0:
+            hash_length_p = _ffi.new("size_t *", hash_length)
+        else:
+            hash_length_p = _ffi.new("size_t *", 2 ** (_ffi.sizeof("size_t") * 8) - 1)
 
         _handle_rs_result(
             _lib.rs_sig_args(filesize, sig_magic_p, block_length_p, hash_length_p),
