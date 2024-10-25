@@ -23,31 +23,31 @@ class RsResult(IntEnum):
     DONE = (cast(int, _lib.RS_DONE), "Completed successfully")
     BLOCKED = (cast(int, _lib.RS_BLOCKED), "Blocked waiting for more data")
     RUNNING = (
-        cast(_lib.RS_RUNNING),
+        cast(int, _lib.RS_RUNNING),
         "The job is still running, and not yet finished or blocked. "
         "This value should never be seen by the application",
     )
-    TEST_SKIPPED = (cast(_lib.RS_TEST_SKIPPED), "Test neither passed or failed")
-    IO_ERROR = (cast(_lib.RS_IO_ERROR), "Error in file or network IO")
-    SYNTAX_ERROR = (cast(_lib.RS_SYNTAX_ERROR), "Command line syntax error")
-    MEMORY_ERROR = (cast(_lib.RS_MEM_ERROR), "Out of memory")
+    TEST_SKIPPED = (cast(int, _lib.RS_TEST_SKIPPED), "Test neither passed or failed")
+    IO_ERROR = (cast(int, _lib.RS_IO_ERROR), "Error in file or network IO")
+    SYNTAX_ERROR = (cast(int, _lib.RS_SYNTAX_ERROR), "Command line syntax error")
+    MEMORY_ERROR = (cast(int, _lib.RS_MEM_ERROR), "Out of memory")
     INPUT_ENDED = (
-        cast(_lib.RS_INPUT_ENDED),
+        cast(int, _lib.RS_INPUT_ENDED),
         "Unexpected end of input file, perhaps due to a "
         "truncated file or dropped network connection",
     )
     BAD_MAGIC = (
-        cast(_lib.RS_BAD_MAGIC),
+        cast(int, _lib.RS_BAD_MAGIC),
         "Bad magic number at start of stream. Probably not a "
         "librsync file, or possibly the wrong kind of file or from an incompatible library version",
     )
     UNIMPLEMENTED = (
-        cast(_lib.RS_UNIMPLEMENTED),
+        cast(int, _lib.RS_UNIMPLEMENTED),
         "The functionality is not implemented yet.",
     )
-    INTERNAL_ERROR = (cast(_lib.RS_INTERNAL_ERROR), "Probably a library bug")
+    INTERNAL_ERROR = (cast(int, _lib.RS_INTERNAL_ERROR), "Probably a library bug")
     PARAM_ERROR = (
-        cast(_lib.RS_PARAM_ERROR),
+        cast(int, _lib.RS_PARAM_ERROR),
         "Bad value passed in to library, probably an application bug",
     )
 
