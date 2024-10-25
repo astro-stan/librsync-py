@@ -14,11 +14,20 @@ from . import _ffi, _lib
 
 
 class RsDeltaMagic(IntEnum):
+    """A 4-byte magic number emitted in network-order at the start of librsync files.
+
+    Used to differentiate the type of data contained in the file.
+    """
     DELTA = cast(int, _lib.RS_DELTA_MAGIC)
     """A delta file."""
 
 
 class RsSignatureMagic(IntEnum):
+    """A 4-byte magic number emitted in network-order at the start of librsync files.
+
+    Used to differentiate the type of data contained in the file.
+    """
+
     MD4_SIG = cast(int, _lib.RS_MD4_SIG_MAGIC)
     """A signature file with MD4 signatures.
 
@@ -44,12 +53,6 @@ class RsSignatureMagic(IntEnum):
     the recommended default supported since librsync 2.2.0.
     """
 
-
-class RsMagic(RsDeltaMagic, RsSignatureMagic):
-    """A 4-byte magic number emitted in network-order at the start of librsync files.
-
-    Used to differentiate the type of data contained in the file.
-    """
 
 
 def _handle_rs_result(
@@ -92,7 +95,7 @@ def get_sig_args(
     sig_magic: RsSignatureMagic | int = 0,
     block_length: int = 0,
     hash_length: int = 0,
-) -> tuple[RsMagic, int, int]:
+) -> tuple[RsSignatureMagic, int, int]:
     """Get recommended arguments for generating a file signature.
 
     :param filesize: The size of the file.
@@ -105,9 +108,9 @@ def get_sig_args(
     :param hash_length: The signature hash (strongsum) length. Smaller values
     make signatures shorter but increase the chance for corruption due to
     hash collisions. Use `0` for maximum or `-1` for minimum.
-    :returns: A 3-tuple containing the RsMagic, block_length and hash_length
+    :returns: A 3-tuple containing the RsSignatureMagic, block_length and hash_length
     in that order.
-    :rtype: tuple[RsMagic, int, int]
+    :rtype: tuple[RsSignatureMagic, int, int]
     :raises RsCApiError: If something goes wrong while inside the C API
     """
     # TODO: Should hash_length be checked against min and max allowed value?
@@ -130,4 +133,4 @@ def get_sig_args(
             raise_on_non_error_results=False,
         )
 
-        return RsMagic(sig_magic_p[0]), block_length_p[0], hash_length_p[0]
+        return RsSignatureMagic(sig_magic_p[0]), block_length_p[0], hash_length_p[0]
