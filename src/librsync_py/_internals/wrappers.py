@@ -5,12 +5,20 @@
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from librsync_py._internals import RsResult
-from librsync_py.exceptions import RsCApiError, RsUnknownError
+from librsync_py.exceptions import RsCApiError, RsParamError, RsUnknownError
 
 from . import _ffi, _lib
+
+if TYPE_CHECKING:  # pragma: no cover
+    from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
+
+from weakref import WeakKeyDictionary
+
+_global_weakkeydict = WeakKeyDictionary()
+"""Used to keep nested cdata objects alive until parent cdata object is GCed"""
 
 
 class RsDeltaMagic(IntEnum):
@@ -70,7 +78,7 @@ def _handle_rs_result(
     :type raise_on_non_error_results: bool
     :returns: Non-erronous RsResult
     :rtype: RsResult
-    :raises ItcCApiError: The appropriate exception subclass for the given RsResult
+    :raises RsCApiError: The appropriate exception subclass for the given RsResult
     """
     if result == RsResult.DONE:
         return RsResult(result)
@@ -89,7 +97,61 @@ def _handle_rs_result(
     raise exc_candidates[0]
 
 
-def get_sig_args(
+def _new_rs_buffers_t_p_handle(
+    input: bytes,
+    output: bytearray,
+    eof: bool = False,
+) -> CTypesData:
+    """Allocate a new rs_buffers_t handle.
+
+    This handle will be automatically freed when no longer referenced.
+
+    :param input: The input buffer
+    :type input: bytes
+    :param output: The output buffer
+    :type output: bytearray
+    :param eof: True if this is the last input data from a given input stream.
+    :type eof: bool
+    :returns: The rs_buffers_t handle
+    :rtype: CTypesData
+    """
+    buffers_p = _ffi.new("rs_buffers_t *")
+
+    in_buf = _ffi.from_buffer("char[]", input, require_writable=False)
+    buffers_p[0].next_in = in_buf
+    buffers_p[0].avail_in = len(in_buf)
+
+    out_buf = _ffi.from_buffer("char[]", output, require_writable=True)
+    buffers_p[0].next_out = out_buf
+    buffers_p[0].avail_out = len(out_buf)
+
+    buffers_p[0].eof_in = eof
+
+    # Keep input and output buffers alive until the parent struct is GCed
+    _global_weakkeydict[buffers_p] = (in_buf, out_buf)
+
+    return buffers_p
+
+
+def _get_rs_buffers_t_unused_input_data_size(buffers_p: CTypesData) -> int:
+    """Get the size of the unused intput data buffer inside rs_buffers_t
+
+    :param buffers_p: The rs_buffers_t handle
+    :type buffers_p: CTypesData
+    """
+    return buffers_p[0].avail_in
+
+
+def _get_rs_buffers_t_unused_output_data_size(buffers_p: CTypesData) -> int:
+    """Get the size of the unused output data buffer inside rs_buffers_t
+
+    :param buffers_p: The rs_buffers_t handle
+    :type buffers_p: CTypesData
+    """
+    return buffers_p[0].avail_out
+
+
+def _get_sig_args(
     filesize: int = 0,
     sig_magic: RsSignatureMagic | int = 0,
     block_length: int = 0,
@@ -121,18 +183,125 @@ def get_sig_args(
         or block_length < 0
         or hash_length < -1
     ):
-        _handle_rs_result(RsResult.PARAM_ERROR)
-    else:
-        sig_magic_p = _ffi.new("rs_magic_number *", sig_magic)
-        block_length_p = _ffi.new("size_t *", block_length)
-        if hash_length >= 0:
-            hash_length_p = _ffi.new("size_t *", hash_length)
-        else:
-            hash_length_p = _ffi.new("size_t *", 2 ** (_ffi.sizeof("size_t") * 8) - 1)
+        raise RsParamError
 
+    sig_magic_p = _ffi.new("rs_magic_number *", sig_magic)
+    block_length_p = _ffi.new("size_t *", block_length)
+    if hash_length >= 0:
+        hash_length_p = _ffi.new("size_t *", hash_length)
+    else:
+        hash_length_p = _ffi.new("size_t *", 2 ** (_ffi.sizeof("size_t") * 8) - 1)
+
+    _handle_rs_result(
+        _lib.rs_sig_args(filesize, sig_magic_p, block_length_p, hash_length_p),
+        raise_on_non_error_results=False,
+    )
+
+    return RsSignatureMagic(sig_magic_p[0]), block_length_p[0], hash_length_p[0]
+
+
+def job_iter(
+    job_p: CTypesData,
+    input: bytes,
+    max_output_size: int = 0,
+    eof: bool = False,
+) -> tuple[RsResult, bytes, bytes]:
+    """Run a single iteration of a given job.
+
+    Calls `rs_job_iter` once and passes it the data inside the `input` buffer.
+
+    After the call any remaining input data is returned alongside all of the
+    produced output data.
+
+    The result of the iteration is also returned. If the returned result is
+    :class:`RsResult.DONE` no more iterations are necessary. However, a returned
+    result of :class:`RsResult.BLOCKED` means one of 3 things:
+
+    - More input data is needed. If there is no more input data call this
+    function again with an empty input buffer and set the `eof` flag to `True`.
+    - There is more output data to be returned.
+    - Both of the above
+
+    NOTE: The job_p handle must be deallocated with :meth:`free_job` when the
+    result of the iteration is :class:`RsStatus.DONE` or the job and its results
+    are no longer needed.
+
+    :param input: The input buffer
+    :type input: bytes
+    :param max_output_size: The maximum size of the output data buffer. Set to `0`
+    to use the same size as the input buffer (`len(input)`).
+    :type max_output_size: int
+    :param eof: True if this is the last input data from a given input stream.
+    :type eof: bool
+    :returns: The result of the iteration, the remaining input buffer data and
+    the produced output data in that order
+    :rtype: tuple[RsStatus, bytes, bytes]
+    """
+    if max_output_size == 0:
+        max_output_size = len(input)
+
+    output = bytearray(max_output_size)
+    buffers_p = _new_rs_buffers_t_p_handle(input, output, eof)
+
+    result = _handle_rs_result(_lib.rs_job_iter(job_p, buffers_p))
+
+    unused_in_size = _get_rs_buffers_t_unused_input_data_size(buffers_p)
+    unused_out_size = _get_rs_buffers_t_unused_output_data_size(buffers_p)
+
+    return (
+        result,
+        input[len(input) - unused_in_size :],
+        bytes(output[: (len(output) - unused_out_size)]),
+    )
+
+
+def free_job(job_p: CTypesData) -> None:
+    """Free a job.
+
+    :raises RsCApiError: If something goes wrong while inside the C API
+    """
+    try:
         _handle_rs_result(
-            _lib.rs_sig_args(filesize, sig_magic_p, block_length_p, hash_length_p),
+            _lib.rs_job_free(job_p),
             raise_on_non_error_results=False,
         )
+    finally:
+        # Sanitise the pointers
+        job_p = _ffi.NULL
 
-        return RsSignatureMagic(sig_magic_p[0]), block_length_p[0], hash_length_p[0]
+
+def sig_begin(
+    filesize: int = 0,
+    sig_magic: RsSignatureMagic | int = 0,
+    block_length: int = 0,
+    hash_length: int = 0,
+) -> CTypesData:
+    """Start a signature generation.
+
+    Returns a job handle, which must be passed to :meth:`job_iter` or
+    :meth:`job_drive`.
+
+    The job handle must be deallocated with :meth:`free_job` when no longer needed
+    or the job completes.
+
+    :param filesize: The size of the file.
+    :type filesize: int
+    :param sig_magic: The signature type. Use 0 for recommended.
+    :type sig_magic: RsSignatureMagic | int
+    :param block_length: The signature block length. Larger values make
+    a shorter signature but increase the delta size. Use 0 for recommended.
+    :type block_length: int
+    :param hash_length: The signature hash (strongsum) length. Smaller values
+    make signatures shorter but increase the chance for corruption due to
+    hash collisions. Use `0` for maximum or `-1` for minimum.
+    :returns: The job handle
+    :rtype: CTypesData
+    :raises RsCApiError: If something goes wrong while inside the C API
+    """
+    sig_magic, block_length, hash_length = _get_sig_args(
+        filesize,
+        sig_magic,
+        block_length,
+        hash_length,
+    )
+    return _lib.rs_sig_begin(block_length, hash_length, sig_magic)

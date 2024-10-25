@@ -16,9 +16,7 @@ try:
     from librsync_py._librsync_py import (
         ffi as _ffi,  # type: ignore[import-untyped] # noqa: F401
     )
-    from librsync_py._librsync_py import (
-        lib as _lib,  # type: ignore[import-untyped]
-    )
+    from librsync_py._librsync_py import lib as _lib  # type: ignore[import-untyped]
 except ImportError as exc:  # pragma: no cover
     msg = "librsync_py C extension import failed, cannot use C-API"
     raise ImportError(msg) from exc
@@ -53,7 +51,7 @@ class RsResult(IntEnum):
     INTERNAL_ERROR = (cast(int, _lib.RS_INTERNAL_ERROR), "Probably a library bug")
     PARAM_ERROR = (
         cast(int, _lib.RS_PARAM_ERROR),
-        "Bad value passed in to library, probably an application bug",
+        "Bad value passed in to library, usage error or application bug",
     )
 
     UNKNOWN = (-1, "Unknown result")
