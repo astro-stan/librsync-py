@@ -3,7 +3,7 @@
 # https://www.gnu.org/licenses/agpl-3.0.en.html
 """Python bindings for the librsync library."""
 
-from librsync_py._internals.wrappers import RsResult
+from librsync_py._internals import RsResult
 
 __all__ = [
     "RsResult",

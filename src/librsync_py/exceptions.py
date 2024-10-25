@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from sys import version_info
 
-from librsync_py import RsResult
+from librsync_py._internals import RsResult
 
 if version_info < (3, 11):  # pragma: no cover
     from typing_extensions import Self
