@@ -43,6 +43,16 @@ else
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Release'}
 endif
 
+# A list of extra C sources to pass the the CFFI generator script
+extra_cffi_source_definitions = files([
+    'src' / meson.project_name() / '_pyext' / '_librsync_py_extra.c'
+])
+
+# A list of extra C headers to pass the the CFFI generator script
+extra_cffi_header_definitions = files([
+    'src' / meson.project_name() / '_pyext' / '_librsync_py_extra.h'
+])
+
 # A set of defines to pass to the preprocessor when preprocessing the librsync
 # headers. These are used to fool the preprocessor that certain system
 # headers have already been included and preprocessed (when in fact they haven't).
@@ -167,6 +177,9 @@ librsync_py_c = configure_file(
         '--module-header',
         librsync_py_h.full_path(),
         '@INPUT@',
+        extra_cffi_header_definitions,
+        '--extra-sources',
+        extra_cffi_source_definitions,
     ],
     input: header_pp_list,
     output: '@0@.c'.format(librsync_py_pyext_name)
@@ -194,16 +207,16 @@ python.extension_module(
 
 python.install_sources(
     files([
-        'src' / 'librsync_py'/ '__init__.py',
-        'src' / 'librsync_py'/ 'exceptions.py',
+        'src' / meson.project_name() / '__init__.py',
+        'src' / meson.project_name() / 'exceptions.py',
     ]),
     subdir: meson.project_name(),
 )
 
 python.install_sources(
     files([
-        'src' / 'librsync_py'/ '_internals' / '__init__.py',
-        'src' / 'librsync_py'/ '_internals' / 'wrappers.py',
+        'src' / meson.project_name() / '_internals' / '__init__.py',
+        'src' / meson.project_name() / '_internals' / 'wrappers.py',
     ]),
     subdir: meson.project_name() / '_internals',
 )

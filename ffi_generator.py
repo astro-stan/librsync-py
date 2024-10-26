@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import os
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -14,7 +15,7 @@ import cffi  # type: ignore[import-untyped]
 
 
 def validate_header_file(parser: ArgumentParser, entry: str) -> None | Path:
-    """Validate the header file arg."""
+    """Validate a header file arg."""
     path = Path(entry)
 
     if path.exists() and path.is_file() and str(path).endswith(".h"):
@@ -23,6 +24,15 @@ def validate_header_file(parser: ArgumentParser, entry: str) -> None | Path:
     parser.error(f"'{path}' does not exist or is not a valid header file.")
     return None
 
+def validate_source_file(parser: ArgumentParser, entry: str) -> None | Path:
+    """Validate a source file arg."""
+    path = Path(entry)
+
+    if path.exists() and path.is_file() and str(path).endswith(".c"):
+        return path.absolute()
+
+    parser.error(f"'{path}' does not exist or is not a valid source file.")
+    return None
 
 if __name__ == "__main__":
     argparser = ArgumentParser(
@@ -44,6 +54,13 @@ if __name__ == "__main__":
         required=True,
         help="The Pyext module header.",
     )
+    argparser.add_argument(
+        "--extra-sources",
+        type=lambda x: validate_source_file(argparser, x),
+        nargs="+",
+        help="Extra sources to pass to cffi.set_source() directly. "
+        "Added before the main module header sources."
+    )
 
     args = argparser.parse_args()
 
@@ -52,9 +69,13 @@ if __name__ == "__main__":
     for header in args.headers:
         ffibuilder.cdef(header.read_text())
 
+    sources = args.module_header.read_text() + os.linesep
+    for source in args.extra_sources:
+        sources += source.read_text() + os.linesep
+
     ffibuilder.set_source(
         args.module_name,
-        args.module_header.read_text(),
+        sources,
     )
 
     ffibuilder.distutils_extension(".")
