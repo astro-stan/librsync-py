@@ -133,6 +133,14 @@ def _new_rs_buffers_t_p_handle(
     return buffers_p
 
 
+def _new_rs_signature_t_pp_handle() -> CTypesData:
+    """Allocate a new rs_signature_t handle.
+
+    This handle will be automatically freed when no longer referenced.
+    """
+    return _ffi.new("rs_signature_t **")
+
+
 def _get_rs_buffers_t_unused_input_data_size(buffers_p: CTypesData) -> int:
     """Get the size of the unused intput data buffer inside rs_buffers_t
 
@@ -198,6 +206,16 @@ def _get_sig_args(
     )
 
     return RsSignatureMagic(sig_magic_p[0]), block_length_p[0], hash_length_p[0]
+
+
+def _build_hash_table(sig_pp: CTypesData) -> None:
+    """Index a signature after loading.
+
+    When the signature handle is no longer needed, it must be deallocated with
+    :meth:`free_sig`.
+    :raises RsCApiError: If something goes wrong while inside the C API
+    """
+    _handle_rs_result(_lib.rs_build_hash_table(sig_pp[0]))
 
 
 def job_iter(
@@ -305,3 +323,53 @@ def sig_begin(
         hash_length,
     )
     return _lib.rs_sig_begin(block_length, hash_length, sig_magic)
+
+
+def loadsig_begin() -> tuple[CTypesData, CTypesData]:
+    """Start loading a generated signature.
+
+    Returns a signature handle and a job handle.
+
+    The job handle must be passed to :meth:`job_iter` or
+    :meth:`job_drive`.
+
+    The job handle must be deallocated with :meth:`free_job` when no longer needed
+    or the job completes.
+
+    When the signature handle is no longer needed, it must be deallocated with
+    :meth:`free_sig`.
+
+    NOTE: The signature handle must not be used before the loadsig job has completed.
+
+    :returns: The signature handle and the job handle in this order
+    :rtype: tuple[CTypesData, CTypesData]
+    """
+    sig_pp = _new_rs_signature_t_pp_handle()
+    return sig_pp, _lib.rs_loadsig_begin(sig_pp)
+
+
+def free_sig(sig_pp: CTypesData) -> None:
+    """Free a signature."""
+    try:
+        _lib.rs_free_sumset(sig_pp[0])  # Function returns void
+    finally:
+        # Sanitise the pointers
+        sig_pp[0] = _ffi.NULL
+        sig_pp = _ffi.NULL
+
+
+def delta_begin(sig_pp: CTypesData) -> CTypesData:
+    """Start a delta file generation.
+
+    Returns a job handle, which must be passed to :meth:`job_iter` or
+    :meth:`job_drive`.
+
+    When the job completes, the signature handle must be deallocated with
+    :meth:`free_sig` and the job handle must be deallocated with :meth:`free_job`.
+
+    :returns: The job handle
+    :rtype: CTypesData
+    :raises RsCApiError: If something goes wrong while inside the C API
+    """
+    _build_hash_table(sig_pp)  # The signature must be indexed before use
+    return _lib.rs_delta_begin(sig_pp[0])
