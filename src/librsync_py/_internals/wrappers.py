@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import io
 from enum import IntEnum
 from typing import TYPE_CHECKING, cast
 
@@ -218,6 +219,56 @@ def _build_hash_table(sig_pp: CTypesData) -> None:
     _handle_rs_result(_lib.rs_build_hash_table(sig_pp[0]))
 
 
+@_ffi.def_extern(error=RsResult.IO_ERROR)
+def _patch_copy_callback(
+    opaque_p: CTypesData,
+    pos: int,
+    len_p: CTypesData,
+    buf_pp: CTypesData,
+) -> RsResult:
+    """Callback for copying basis file data during patching.
+
+    Invoked from the C API during a call to :meth:`job_iter` or
+    :meth:`job_drive`.
+
+    :param opaque_p: A pointer to the file-like python object
+    :type opaque_p: CTypesData
+    :param pos: Position where copying should begin
+    :type pos: int
+    :param len_p: A pointer to an integer type. On input, the amount of data
+    that should be retrieved. Updated to show how much is actually available,
+    but should not be greater than the input value.
+    :type len_p: CTypesData
+    :param buf_pp: A double pointer to a buffer of at least `len_p[0]` bytes.
+    May be updated to point to another buffer holding the data if prefered.
+    """
+    # TODO: Find a way to return exceptions from here back to job_iter
+
+    basis = cast(io.RawIOBase | io.BufferedIOBase, _ffi.from_handle(opaque_p))
+
+    # Sanity check
+    if basis.closed:
+        return RsResult.IO_ERROR
+
+    # Read data from the basis
+    # If `.seek()` or `.read()` raises an error it will be captured
+    # by CFFI and an RsResult.IO_ERROR will be returned (see annotation)
+    basis.seek(pos)
+    data = basis.read(len_p)
+
+    # Update the length with the actual read length
+    len_p[0] = len(data)
+
+    if len(data) == 0:
+        return RsResult.INPUT_ENDED
+
+    # Copy the data to the buffer
+    c_buffer = _ffi.buffer(buf_pp[0], len(data))
+    c_buffer[:] = data
+
+    return RsResult.DONE
+
+
 def job_iter(
     job_p: CTypesData,
     input: bytes,
@@ -373,3 +424,23 @@ def delta_begin(sig_pp: CTypesData) -> CTypesData:
     """
     _build_hash_table(sig_pp)  # The signature must be indexed before use
     return _lib.rs_delta_begin(sig_pp[0])
+
+
+def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
+    if not isinstance(basis, (io.BufferedIOBase, io.RawIOBase)):
+        raise ValueError("Expected a binary file-like object.")
+    elif basis.closed or not basis.readable():
+        raise ValueError("Expected a file-like object that is open for reading.")
+    elif not basis.seekable():
+        raise ValueError(
+            "Expected a file-like object which supports random access (.seek())."
+        )
+
+    basis_p = _ffi.new_handle(basis)
+
+    # Keep the handle alive while the basis object is GCed
+    _global_weakkeydict[basis] = basis_p
+
+    # When the C API calls `_lib._patch_copy_callback`, the
+    # :meth:`_patch_copy_callback` function will be called
+    return _lib.rs_patch_begin(_lib._patch_copy_callback, basis_p)

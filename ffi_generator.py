@@ -24,6 +24,7 @@ def validate_header_file(parser: ArgumentParser, entry: str) -> None | Path:
     parser.error(f"'{path}' does not exist or is not a valid header file.")
     return None
 
+
 def validate_source_file(parser: ArgumentParser, entry: str) -> None | Path:
     """Validate a source file arg."""
     path = Path(entry)
@@ -33,6 +34,7 @@ def validate_source_file(parser: ArgumentParser, entry: str) -> None | Path:
 
     parser.error(f"'{path}' does not exist or is not a valid source file.")
     return None
+
 
 if __name__ == "__main__":
     argparser = ArgumentParser(
