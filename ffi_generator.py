@@ -54,13 +54,6 @@ if __name__ == "__main__":
         required=True,
         help="The Pyext module header.",
     )
-    argparser.add_argument(
-        "--extra-sources",
-        type=lambda x: validate_source_file(argparser, x),
-        nargs="+",
-        help="Extra sources to pass to cffi.set_source() directly. "
-        "Added before the main module header sources."
-    )
 
     args = argparser.parse_args()
 
@@ -69,13 +62,9 @@ if __name__ == "__main__":
     for header in args.headers:
         ffibuilder.cdef(header.read_text())
 
-    sources = args.module_header.read_text() + os.linesep
-    for source in args.extra_sources:
-        sources += source.read_text() + os.linesep
-
     ffibuilder.set_source(
         args.module_name,
-        sources,
+        args.module_header.read_text(),
     )
 
     ffibuilder.distutils_extension(".")

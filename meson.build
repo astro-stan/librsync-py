@@ -43,11 +43,6 @@ else
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Release'}
 endif
 
-# A list of extra C sources to pass the the CFFI generator script
-extra_cffi_source_definitions = files([
-    'src' / meson.project_name() / '_pyext' / '_librsync_py_extra.c'
-])
-
 # A list of extra C headers to pass the the CFFI generator script
 extra_cffi_header_definitions = files([
     'src' / meson.project_name() / '_pyext' / '_librsync_py_extra.h'
@@ -178,8 +173,6 @@ librsync_py_c = configure_file(
         librsync_py_h.full_path(),
         '@INPUT@',
         extra_cffi_header_definitions,
-        '--extra-sources',
-        extra_cffi_source_definitions,
     ],
     input: header_pp_list,
     output: '@0@.c'.format(librsync_py_pyext_name)
