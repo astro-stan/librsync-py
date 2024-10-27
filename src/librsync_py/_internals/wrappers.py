@@ -254,7 +254,7 @@ def _patch_copy_callback(
     # If `.seek()` or `.read()` raises an error it will be captured
     # by CFFI and an RsResult.IO_ERROR will be returned (see annotation)
     basis.seek(pos)
-    data = basis.read(len_p)
+    data = basis.read(len_p[0])
 
     # Update the length with the actual read length
     len_p[0] = len(data)
