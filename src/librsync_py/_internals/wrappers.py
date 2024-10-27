@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import io
 import time
+from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, cast
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from librsync_py._internals import RsResult
 from librsync_py.exceptions import RsCApiError, RsParamError, RsUnknownError
@@ -77,6 +79,56 @@ class RsSignatureMagic(IntEnum):
     Uses a faster/safer rollsum together with the safer BLAKE2 hash. This is
     the recommended default supported since librsync 2.2.0.
     """
+
+
+@dataclass
+class _PatchHandle:
+    """A helper class used during patching iterations.
+
+    Used to pass references to python objects between the following methods:
+    - :meth:`_patch_copy_callback`: Used to get a reference of the `basis` object.
+    - :meth:`_on_patch_copy_error`: Used to set a reference to an `exc` object
+      (if one was raised while inside :meth:`_patch_copy_callback`).
+    - :meth:`patch_begin`: Used to set the reference to the `basis` object.
+    - :meth:`job_iter`: Used to get the refence to the `exc` object (if any)
+    """
+
+    basis: io.BufferedIOBase | io.RawIOBase
+    """A binary file-like object open for reading and supporting random access
+    (`.seek()`).
+    """
+    exc: Exception | None = None
+    """An exception raised from inside the :meth:`_patch_copy_callback` method
+    (if any)."""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Run validation on each attribute set."""
+        super().__setattr__(name, value)
+        validator = getattr(self, 'validate_' + name, None)
+        if callable(validator):
+            validator()
+
+    def validate_basis(self) -> None:
+        """Validate basis."""
+        err = ""
+        if not isinstance(self.basis, (io.BufferedIOBase, io.RawIOBase)):
+            err = "basis: Expected a binary file-like object."
+        elif self.basis.closed or not self.basis.readable():
+            err = "basis: Expected a file-like object that is open for reading."
+        elif not self.basis.seekable():
+            err = "basis: Expected a file-like object which supports random access (.seek())."
+
+        if err:
+            raise ValueError(err)
+
+    def validate_exc(self) -> None:
+        """Validate exc."""
+        err = ""
+        if not (self.exc is None or isinstance(self.exc, BaseException)):
+            err = "exc: Expected an instance of BaseException() or None"
+
+        if err:
+            raise ValueError(err)
 
 
 def _handle_rs_result(
@@ -176,6 +228,21 @@ def _get_rs_buffers_t_unused_output_data_size(buffers_p: CTypesData) -> int:
     return buffers_p[0].avail_out
 
 
+def _get_job_t_copy_arg(job_p: CTypesData) -> Any | None:
+    """Get the python object referenced by the `((rs_job_t *)job_p)->copy_arg`.
+
+    If this field is not set (i.e equals `_ffi.NULL`), None is returned.
+
+    :param job_p: The job handle
+    :type job_p: CTypesData
+    :returns: The python object pointed to by the `copy_arg` field or None
+    :returns: Union[Any, None]
+    """
+    if job_p[0].copy_arg != _ffi.NULL:
+        return _ffi.from_handle(job_p[0].copy_arg)
+    return None
+
+
 def _get_sig_args(
     filesize: int = 0,
     sig_magic: int | RsSignatureMagic = 0,
@@ -235,9 +302,73 @@ def _build_hash_table(sig_pp: CTypesData) -> None:
     _handle_rs_result(_lib.rs_build_hash_table(sig_pp[0]))
 
 
-@_ffi.def_extern(error=RsResult.IO_ERROR)
+def _on_patch_copy_error(handle_name: str) -> Callable:
+    """Handle exceptions raised while inside :meth:`_patch_copy_callback`.
+
+    Set this function as the `onerror` handler inside the `_ffi.def_extern()`
+    annotation of :meth:`_patch_copy_callback`:
+
+    ```
+    @_ffi.def_extern(onerror=_on_patch_copy_error('handle_arg_name'), ...)
+    def _patch_copy_callback(
+        # The patch handle. CTypesData reference to :class:`_PatchHandle`
+        handle_arg_name: CTypesData,
+        ...):
+        ...
+    ```
+
+    This handler will derefence the :class:`_PatchHandle` instance passed to
+    :meth:`_patch_copy_callback` method. If an exception is raised while inside
+    the method, a reference to the exception instance will be saved under
+    `_PatchHandle.exc` for processing after the patch iteration.
+
+    :param handle_name: The name of the argument of :meth:`_patch_copy_callback`
+    containing the CTypesData reference to :class:`_PatchHandle`.
+    :type handle_name: str
+    :returns: The onerror handler to be called by CFFI in an exception is raised
+    while inside :meth:`_patch_copy_callback`
+    :rtype: Callable
+    """
+    def _func(
+        exception: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Handle exceptions raised while inside :meth:`_patch_copy_callback`.
+
+        :param exception: The type of the exception if one was raised
+        :type exception: Optional[Type[BaseException]]
+        :param exc_value: The instance of the exception if one was raised
+        :type exc_value: Optional[BaseException]
+        :param traceback: The traceback of the exception if one was raised
+        :type traceback: Optional[TracebackType]
+        """
+        # See CFFI documentation on how this works:
+        # <https://cffi.readthedocs.io/en/stable/using.html#extern-python-reference:~:text=onerror%3A%20if%20you,f_locals%5B%27argname%27%5D.>
+
+        # Check an exception was raised and there is access to its traceback
+        if traceback is not None and exc_value is not None:
+            # Get the :meth:`_patch_copy_callback` frame
+            callback_frame = traceback.tb_frame
+            # Get the patch handle argument
+            handle_p = callback_frame.f_locals[handle_name]
+            # Get the patch handle instance
+            patch_handle = cast(_PatchHandle, _ffi.from_handle(handle_p))
+            # Save the exception instance inside the patch handle
+            patch_handle.exc = exc_value
+
+        # Always return None
+        # This ensures CFFI will not print the exception traceback on stderr
+        return
+
+    return _func
+
+@_ffi.def_extern(
+    error=RsResult.IO_ERROR, # Return this from the callback if an exception is raised.
+    onerror=_on_patch_copy_error('opaque_p'), # Handle any raised exceptions
+)
 def _patch_copy_callback(
-    opaque_p: CTypesData,
+    opaque_p: CTypesData, # Keep name in sync with the `onerror` handler above
     pos: int,
     len_p: CTypesData,
     buf_pp: CTypesData,
@@ -258,13 +389,8 @@ def _patch_copy_callback(
     :param buf_pp: A double pointer to a buffer of at least `len_p[0]` bytes.
     May be updated to point to another buffer holding the data if prefered.
     """
-    # TODO: Find a way to return exceptions from here back to job_iter
-
-    basis = cast(io.RawIOBase | io.BufferedIOBase, _ffi.from_handle(opaque_p))
-
-    # Sanity check
-    if basis.closed:
-        return RsResult.IO_ERROR
+    patch_handle = cast(_PatchHandle, _ffi.from_handle(opaque_p))
+    basis = patch_handle.basis
 
     for x in range(_MAX_COPY_OP_RETRIES + 1):
         try:
@@ -274,12 +400,13 @@ def _patch_copy_callback(
             break
         # Normally if `.seek()` or `.read()` raises an error, it should be
         # captured by CFFI and this callback should return `RsResult.IO_ERROR`
-        # (the `error` argument of the function annotation ensures that).
+        # (the `error` and `onerror` arguments of the function annotation
+        # ensure that).
         #
         # However, `BlockingIOError` is a special case, where the data is not
         # *yet* available. In this case there are 2 options:
         #   1. Block inside this callback to wait for the data. This will block
-        #      the tread running `job_iter`.
+        #      the thread running :meth:`job_iter`.
         #   2. Return no data (len_p[0] == 0) and `RsResult.BLOCKED` or
         #      `RsResult.DONE`
         #
@@ -352,7 +479,18 @@ def job_iter(
     output = bytearray(max_output_size)
     buffers_p = _new_rs_buffers_t_p_handle(input_, output, eof=eof)
 
-    result = _handle_rs_result(_lib.rs_job_iter(job_p, buffers_p))
+    try:
+        result = _handle_rs_result(_lib.rs_job_iter(job_p, buffers_p))
+    except RsCApiError as e:
+        # Patch jobs (initialised with :meth:`patch_begin`) should have
+        # this arg set to an instance of :class:`_PatchHandle`.
+        copy_arg = cast(_PatchHandle | None, _get_job_t_copy_arg(job_p))
+        # If an exception was raised while inside the :meth:`_patch_copy_callback`
+        # the instance of that exception shuld be saved under `copy_arg.exc` by
+        # the :meth:`_on_patch_copy_error` handler.
+        if copy_arg and isinstance(copy_arg.exc, BaseException):
+            raise copy_arg.exc from e
+        raise e
 
     unused_in_size = _get_rs_buffers_t_unused_input_data_size(buffers_p)
     unused_out_size = _get_rs_buffers_t_unused_output_data_size(buffers_p)
@@ -493,14 +631,15 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     if err:
         raise ValueError(err)
 
-    basis_p = _ffi.new_handle(basis)
+    patch_handle = _PatchHandle(basis)
+    patch_handle_p = _ffi.new_handle(patch_handle)
 
-    # Keep the handle alive while the basis object is GCed
-    _global_weakkeydict[basis] = basis_p
+    # Keep the handle alive until the basis object is GCed
+    _global_weakkeydict[basis] = patch_handle_p
 
     # When the C API calls `_lib._patch_copy_callback`, the
     # :meth:`_patch_copy_callback` function will be called
     return _lib.rs_patch_begin(
         _lib._patch_copy_callback,  # noqa: SLF001
-        basis_p,
+        patch_handle_p,
     )
