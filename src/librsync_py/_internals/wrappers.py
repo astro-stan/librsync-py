@@ -87,7 +87,7 @@ def _handle_rs_result(
     """Check the operation result and raise an appropriate :class:`RsCApiError` if needed.
 
     :param result: The result of the operation
-    :type result: int | RsResult
+    :type result: Union[int, RsResult]
     :param raise_on_non_error_results: Whether or not non-erronous results should raise
     an :class:`RsCApiError`. NOTE: RsResult.DONE is not affected by this setting and will
     never raise an exception.
@@ -114,8 +114,9 @@ def _handle_rs_result(
 
 
 def _new_rs_buffers_t_p_handle(
-    input: bytes,
+    input_: bytes,
     output: bytearray,
+    *,
     eof: bool = False,
 ) -> CTypesData:
     """Allocate a new rs_buffers_t handle.
@@ -133,18 +134,18 @@ def _new_rs_buffers_t_p_handle(
     """
     buffers_p = _ffi.new("rs_buffers_t *")
 
-    in_buf = _ffi.from_buffer("char[]", input, require_writable=False)
-    buffers_p[0].next_in = in_buf
-    buffers_p[0].avail_in = len(in_buf)
+    in_buf_p = _ffi.from_buffer("char[]", input_, require_writable=False)
+    buffers_p[0].next_in = in_buf_p
+    buffers_p[0].avail_in = len(in_buf_p)
 
-    out_buf = _ffi.from_buffer("char[]", output, require_writable=True)
-    buffers_p[0].next_out = out_buf
-    buffers_p[0].avail_out = len(out_buf)
+    out_buf_p = _ffi.from_buffer("char[]", output, require_writable=True)
+    buffers_p[0].next_out = out_buf_p
+    buffers_p[0].avail_out = len(out_buf_p)
 
     buffers_p[0].eof_in = eof
 
     # Keep input and output buffers alive until the parent struct is GCed
-    _global_weakkeydict[buffers_p] = (in_buf, out_buf)
+    _global_weakkeydict[buffers_p] = (in_buf_p, out_buf_p)
 
     return buffers_p
 
@@ -158,7 +159,7 @@ def _new_rs_signature_t_pp_handle() -> CTypesData:
 
 
 def _get_rs_buffers_t_unused_input_data_size(buffers_p: CTypesData) -> int:
-    """Get the size of the unused intput data buffer inside rs_buffers_t
+    """Get the size of the unused intput data buffer inside `rs_buffers_t`.
 
     :param buffers_p: The rs_buffers_t handle
     :type buffers_p: CTypesData
@@ -167,7 +168,7 @@ def _get_rs_buffers_t_unused_input_data_size(buffers_p: CTypesData) -> int:
 
 
 def _get_rs_buffers_t_unused_output_data_size(buffers_p: CTypesData) -> int:
-    """Get the size of the unused output data buffer inside rs_buffers_t
+    """Get the size of the unused output data buffer inside `rs_buffers_t`.
 
     :param buffers_p: The rs_buffers_t handle
     :type buffers_p: CTypesData
@@ -177,7 +178,7 @@ def _get_rs_buffers_t_unused_output_data_size(buffers_p: CTypesData) -> int:
 
 def _get_sig_args(
     filesize: int = 0,
-    sig_magic: RsSignatureMagic | int = 0,
+    sig_magic: int | RsSignatureMagic = 0,
     block_length: int = 0,
     hash_length: int = 0,
 ) -> tuple[RsSignatureMagic, int, int]:
@@ -186,7 +187,7 @@ def _get_sig_args(
     :param filesize: The size of the file.
     :type filesize: int
     :param sig_magic: The signature type. Use 0 for recommended.
-    :type sig_magic: RsSignatureMagic | int
+    :type sig_magic: Union[int, RsSignatureMagic]
     :param block_length: The signature block length. Larger values make
     a shorter signature but increase the delta size. Use 0 for recommended.
     :type block_length: int
@@ -241,7 +242,7 @@ def _patch_copy_callback(
     len_p: CTypesData,
     buf_pp: CTypesData,
 ) -> RsResult:
-    """Callback for copying basis file data during patching.
+    """Copy data from a basis file during a patching iteration.
 
     Invoked from the C API during a call to :meth:`job_iter` or
     :meth:`job_drive`.
@@ -309,8 +310,9 @@ def _patch_copy_callback(
 
 def job_iter(
     job_p: CTypesData,
-    input: bytes,
+    input_: bytes,
     max_output_size: int = 0,
+    *,
     eof: bool = False,
 ) -> tuple[RsResult, bytes, bytes]:
     """Run a single iteration of a given job.
@@ -345,10 +347,10 @@ def job_iter(
     :rtype: tuple[RsStatus, bytes, bytes]
     """
     if max_output_size == 0:
-        max_output_size = len(input)
+        max_output_size = len(input_)
 
     output = bytearray(max_output_size)
-    buffers_p = _new_rs_buffers_t_p_handle(input, output, eof)
+    buffers_p = _new_rs_buffers_t_p_handle(input_, output, eof=eof)
 
     result = _handle_rs_result(_lib.rs_job_iter(job_p, buffers_p))
 
@@ -357,7 +359,7 @@ def job_iter(
 
     return (
         result,
-        input[len(input) - unused_in_size :],
+        input_[len(input_) - unused_in_size :],
         bytes(output[: (len(output) - unused_out_size)]),
     )
 
@@ -379,7 +381,7 @@ def free_job(job_p: CTypesData) -> None:
 
 def sig_begin(
     filesize: int = 0,
-    sig_magic: RsSignatureMagic | int = 0,
+    sig_magic: int | RsSignatureMagic = 0,
     block_length: int = 0,
     hash_length: int = 0,
 ) -> CTypesData:
@@ -394,7 +396,7 @@ def sig_begin(
     :param filesize: The size of the file.
     :type filesize: int
     :param sig_magic: The signature type. Use 0 for recommended.
-    :type sig_magic: RsSignatureMagic | int
+    :type sig_magic: Union[int, RsSignatureMagic]
     :param block_length: The signature block length. Larger values make
     a shorter signature but increase the delta size. Use 0 for recommended.
     :type block_length: int
@@ -465,14 +467,31 @@ def delta_begin(sig_pp: CTypesData) -> CTypesData:
 
 
 def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
+    """Start a patched file generation.
+
+    Returns a job handle, which must be passed to :meth:`job_iter` or
+    :meth:`job_drive`.
+
+    The job handle must be deallocated with :meth:`free_job` when no longer needed
+    or the job completes.
+
+    :param basis: A binary file-like object open for reading and supporting
+    random access (`.seek()`).
+    :type basis: Union[io.BufferedIOBase, io.RawIOBase]
+    :returns: The job handle
+    :rtype: CTypesData
+    :raises ValueError: If there is something wrong with the provided arugments
+    """
+    err = ""
     if not isinstance(basis, (io.BufferedIOBase, io.RawIOBase)):
-        raise ValueError("Expected a binary file-like object.")
+        err = "Expected a binary file-like object."
     if basis.closed or not basis.readable():
-        raise ValueError("Expected a file-like object that is open for reading.")
+        err = "Expected a file-like object that is open for reading."
     if not basis.seekable():
-        raise ValueError(
-            "Expected a file-like object which supports random access (.seek())."
-        )
+        err = "Expected a file-like object which supports random access (.seek())."
+
+    if err:
+        raise ValueError(err)
 
     basis_p = _ffi.new_handle(basis)
 
@@ -481,4 +500,7 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
 
     # When the C API calls `_lib._patch_copy_callback`, the
     # :meth:`_patch_copy_callback` function will be called
-    return _lib.rs_patch_begin(_lib._patch_copy_callback, basis_p)
+    return _lib.rs_patch_begin(
+        _lib._patch_copy_callback,  # noqa: SLF001
+        basis_p,
+    )
