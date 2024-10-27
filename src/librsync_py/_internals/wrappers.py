@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any, Callable, cast
+from weakref import WeakKeyDictionary
 
 from librsync_py._internals import RsResult
 from librsync_py.exceptions import RsCApiError, RsParamError, RsUnknownError
@@ -20,7 +21,6 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
 
-from weakref import WeakKeyDictionary
 
 _MAX_COPY_OP_RETRIES = 10
 """The maximum number of retries allowed when trying to copy data from the
