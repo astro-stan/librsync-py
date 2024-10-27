@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import io
+import time
 from enum import IntEnum
 from typing import TYPE_CHECKING, cast
 
@@ -17,6 +18,20 @@ if TYPE_CHECKING:  # pragma: no cover
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
 
 from weakref import WeakKeyDictionary
+
+_MAX_COPY_OP_RETRIES = 10
+"""The maximum number of retries allowed when trying to copy data from the
+basis file during a patch iteration. See :meth:`_patch_copy_callback` for more
+information.
+"""
+
+_SLEEP_DURATION_BETWEEN_COPY_OP_RETRIES = 0.05
+"""In seconds. The delay between retries to copy data from a basis file during
+a patch iteration. The thread running :meth:`job_iter` will be blocked for this
+amount of time after each unsuccessful attempt to copy data from the basis file.
+See :meth:`_patch_copy_callback` for more information.
+"""
+
 
 _global_weakkeydict = WeakKeyDictionary()
 """Used to keep nested cdata objects alive until parent cdata object is GCed"""
@@ -250,11 +265,34 @@ def _patch_copy_callback(
     if basis.closed:
         return RsResult.IO_ERROR
 
-    # Read data from the basis
-    # If `.seek()` or `.read()` raises an error it will be captured
-    # by CFFI and an RsResult.IO_ERROR will be returned (see annotation)
-    basis.seek(pos)
-    data = basis.read(len_p[0])
+    for x in range(_MAX_COPY_OP_RETRIES + 1):
+        try:
+            # Read data from the basis
+            basis.seek(pos)
+            data = basis.read(len_p[0])
+            break
+        # Normally if `.seek()` or `.read()` raises an error, it should be
+        # captured by CFFI and this callback should return `RsResult.IO_ERROR`
+        # (the `error` argument of the function annotation ensures that).
+        #
+        # However, `BlockingIOError` is a special case, where the data is not
+        # *yet* available. In this case there are 2 options:
+        #   1. Block inside this callback to wait for the data. This will block
+        #      the tread running `job_iter`.
+        #   2. Return no data (len_p[0] == 0) and `RsResult.BLOCKED` or
+        #      `RsResult.DONE`
+        #
+        # Option 2 sounds like the correct thing to do, however, due to librsync
+        # implementation specifics it is not a viable option. See:
+        # <https://github.com/librsync/librsync/issues/258>.
+        #
+        # This leaves only option 1.
+        except BlockingIOError:
+            if x < _MAX_COPY_OP_RETRIES:
+                time.sleep(_SLEEP_DURATION_BETWEEN_COPY_OP_RETRIES)
+            else:
+                len_p[0] = 0
+                raise  # Something is wrong. Give up.
 
     # Update the length with the actual read length
     len_p[0] = len(data)
@@ -429,9 +467,9 @@ def delta_begin(sig_pp: CTypesData) -> CTypesData:
 def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     if not isinstance(basis, (io.BufferedIOBase, io.RawIOBase)):
         raise ValueError("Expected a binary file-like object.")
-    elif basis.closed or not basis.readable():
+    if basis.closed or not basis.readable():
         raise ValueError("Expected a file-like object that is open for reading.")
-    elif not basis.seekable():
+    if not basis.seekable():
         raise ValueError(
             "Expected a file-like object which supports random access (.seek())."
         )
