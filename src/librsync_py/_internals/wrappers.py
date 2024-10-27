@@ -104,7 +104,7 @@ class _PatchHandle:
     def __setattr__(self, name: str, value: Any) -> None:
         """Run validation on each attribute set."""
         super().__setattr__(name, value)
-        validator = getattr(self, 'validate_' + name, None)
+        validator = getattr(self, "validate_" + name, None)
         if callable(validator):
             validator()
 
@@ -329,6 +329,7 @@ def _on_patch_copy_error(handle_name: str) -> Callable:
     while inside :meth:`_patch_copy_callback`
     :rtype: Callable
     """
+
     def _func(
         exception: type[BaseException] | None,
         exc_value: BaseException | None,
@@ -359,16 +360,16 @@ def _on_patch_copy_error(handle_name: str) -> Callable:
 
         # Always return None
         # This ensures CFFI will not print the exception traceback on stderr
-        return
 
     return _func
 
+
 @_ffi.def_extern(
-    error=RsResult.IO_ERROR, # Return this from the callback if an exception is raised.
-    onerror=_on_patch_copy_error('opaque_p'), # Handle any raised exceptions
+    error=RsResult.IO_ERROR,  # Return this from the callback if an exception is raised.
+    onerror=_on_patch_copy_error("opaque_p"),  # Handle any raised exceptions
 )
 def _patch_copy_callback(
-    opaque_p: CTypesData, # Keep name in sync with the `onerror` handler above
+    opaque_p: CTypesData,  # Keep name in sync with the `onerror` handler above
     pos: int,
     len_p: CTypesData,
     buf_pp: CTypesData,
