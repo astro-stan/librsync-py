@@ -8,7 +8,6 @@ import io
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from types import TracebackType
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 from librsync_py._internals import RsResult
@@ -17,6 +16,8 @@ from librsync_py.exceptions import RsCApiError, RsParamError, RsUnknownError
 from . import _ffi, _lib
 
 if TYPE_CHECKING:  # pragma: no cover
+    from types import TracebackType
+
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
 
 from weakref import WeakKeyDictionary
@@ -101,7 +102,7 @@ class _PatchHandle:
     """An exception raised from inside the :meth:`_patch_copy_callback` method
     (if any)."""
 
-    def __setattr__(self, name: str, value: Any) -> None:
+    def __setattr__(self, name: str, value: Any) -> None:  # noqa: ANN401
         """Run validation on each attribute set."""
         super().__setattr__(name, value)
         validator = getattr(self, "validate_" + name, None)
@@ -228,7 +229,7 @@ def _get_rs_buffers_t_unused_output_data_size(buffers_p: CTypesData) -> int:
     return buffers_p[0].avail_out
 
 
-def _get_job_t_copy_arg(job_p: CTypesData) -> Any | None:
+def _get_job_t_copy_arg(job_p: CTypesData) -> Any | None:  # noqa: ANN401
     """Get the python object referenced by the `((rs_job_t *)job_p)->copy_arg`.
 
     If this field is not set (i.e equals `_ffi.NULL`), None is returned.
@@ -331,7 +332,7 @@ def _on_patch_copy_error(handle_name: str) -> Callable:
     """
 
     def _func(
-        exception: type[BaseException] | None,
+        exception: type[BaseException] | None,  # noqa: ARG001
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
@@ -491,7 +492,7 @@ def job_iter(
         # the :meth:`_on_patch_copy_error` handler.
         if copy_arg and isinstance(copy_arg.exc, BaseException):
             raise copy_arg.exc from e
-        raise e
+        raise
 
     unused_in_size = _get_rs_buffers_t_unused_input_data_size(buffers_p)
     unused_out_size = _get_rs_buffers_t_unused_output_data_size(buffers_p)
