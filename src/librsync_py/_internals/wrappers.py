@@ -635,12 +635,14 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     patch_handle = _PatchHandle(basis)
     patch_handle_p = _ffi.new_handle(patch_handle)
 
-    # Keep the handle alive until the basis object is GCed
-    _global_weakkeydict[basis] = patch_handle_p
-
-    # When the C API calls `_lib._patch_copy_callback`, the
-    # :meth:`_patch_copy_callback` function will be called
-    return _lib.rs_patch_begin(
+    job_p = _lib.rs_patch_begin(
+        # When the C API calls `_lib._patch_copy_callback`, the
+        # :meth:`_patch_copy_callback` function will be called
         _lib._patch_copy_callback,  # noqa: SLF001
         patch_handle_p,
     )
+
+    # Keep the handle alive until the job_p object is GCed
+    _global_weakkeydict[job_p] = patch_handle_p
+
+    return job_p
