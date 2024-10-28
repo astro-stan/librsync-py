@@ -1,0 +1,3 @@
+[submodule "vendor/librsync"]
+	path = vendor/librsync
+	url = https://github.com/librsync/librsync
