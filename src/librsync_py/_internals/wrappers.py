@@ -7,7 +7,8 @@ from __future__ import annotations
 import io
 import time
 from dataclasses import dataclass
-from enum import IntEnum
+from datetime import datetime, timezone
+from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
@@ -80,6 +81,160 @@ class RsSignatureMagic(IntEnum):
     Uses a faster/safer rollsum together with the safer BLAKE2 hash. This is
     the recommended default supported since librsync 2.2.0.
     """
+
+
+@dataclass(frozen=True, kw_only=True)
+class JobStats:
+    """librsync job statistics."""
+
+    class JobType(StrEnum):
+        """librsync job type."""
+
+        NOOP = ""
+        DELTA = "delta"
+        PATCH = "patch"
+        LOAD_SIGNATURE = "loadsig"
+        SIGNATURE = "signature"
+
+    job_type: JobType
+    """Human-readable name of current operation."""
+    lit_cmds: int
+    """Number of literal commands."""
+    lit_bytes: int
+    """Number of literal bytes."""
+    lit_cmdbytes: int
+    """Number of bytes used in literal command headers."""
+
+    copy_cmds: int
+    """Number of copy commands."""
+    copy_bytes: int
+    """Number of copied bytes."""
+    copy_cmdbytes: int
+    """Number of bytes used in copy command headers."""
+
+    sig_cmds: int
+    """Number of signature commands."""
+    sig_bytes: int
+    """Number of signature bytes."""
+
+    false_matches: int
+    """Number of false matches."""
+
+    sig_blocks: int
+    """Number of blocks described by the signature."""
+
+    block_len: int
+    """The block length."""
+
+    in_bytes: int
+    """Total bytes read from input."""
+
+    out_bytes: int
+    """Total bytes written to output."""
+
+    start_time: datetime
+    """The start time."""
+
+    completion_time: datetime | None
+    """The time the job completed. None if the job has not completed yet."""
+
+    @property
+    def time_taken(self) -> float:
+        """The amount of time taken to complete the job (in seconds).
+
+        If the job has not completed yet, the time taken up to this point is
+        returned.
+        """
+        completion_time = self.completion_time or datetime.now(timezone.utc)
+        return (completion_time - self.start_time).total_seconds()
+
+    @property
+    def in_speed(self) -> float:
+        """The input stream speed in B/s.
+
+        If the job has not completed yet, the speed up to this point is returned.
+        """
+        if not self.in_bytes:
+            return 0.0
+        return float(self.in_bytes / (self.time_taken or 1))
+
+    @property
+    def out_speed(self) -> float:
+        """The output stream speed in B/s.
+
+        If the job has not completed yet, the speed up to this point is returned.
+        """
+        if not self.out_bytes:
+            return 0.0
+        return float(self.out_bytes / (self.time_taken or 1))
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchStats:
+    """Delta file match statistics."""
+
+    find_count: int
+    """The number of finds tried."""
+    match_count: int
+    """The number of matches found."""
+    hashcmp_count: int
+    """The number of hash compares done."""
+    entrycmp_count: int
+    """The number of entry compares done."""
+    strongsum_calc_count: int
+    """The number of strong sum calculations done."""
+
+    @property
+    def weaksumcmp_count(self) -> int:
+        """The number of weak sum compares done."""
+        return self.hashcmp_count
+
+    @property
+    def strongsumcmp_count(self) -> int:
+        """The number of strong sum compares done."""
+        return self.entrycmp_count
+
+    @property
+    def hashcmp_ratio(self) -> float:
+        """The ratio of hash to total compares done."""
+        if not (self.hashcmp_count and self.find_count):
+            return 1.0
+        return float(self.hashcmp_count / self.find_count)
+
+    @property
+    def weaksumcmp_ratio(self) -> float:
+        """The ratio of weak sum to total compares done."""
+        return self.hashcmp_ratio
+
+    @property
+    def entrycmp_ratio(self) -> float:
+        """The ratio of entry to total compares done."""
+        if not (self.entrycmp_count and self.find_count):
+            return 1.0
+        return float(self.entrycmp_count / self.find_count)
+
+    @property
+    def strongsumcmp_ratio(self) -> float:
+        """The ratio of strong sum to total compares done."""
+        return self.entrycmp_ratio
+
+    @property
+    def match_ratio(self) -> float:
+        """The match ratio.
+
+        For signatures with equal block and hash lengths, higher match ratio
+        results in smaller delta file sizes.
+        """
+        if not (self.match_count and self.find_count):
+            return 1.0
+        return float(self.match_count / self.find_count)
+
+    @property
+    def strongsum_calc_ratio(self) -> float:
+        """The ratio of strong sum to total calculations done."""
+        if not (self.strongsum_calc_count and self.find_count):
+            return 1.0
+        return float(self.strongsum_calc_count / self.find_count)
 
 
 @dataclass
@@ -298,6 +453,9 @@ def _build_hash_table(sig_pp: CTypesData) -> None:
 
     When the signature handle is no longer needed, it must be deallocated with
     :meth:`free_sig`.
+
+    :param sig_pp: The signature handle
+    :type sig_pp: CTypesData
     :raises RsCApiError: If something goes wrong while inside the C API
     """
     _handle_rs_result(_lib.rs_build_hash_table(sig_pp[0]))
@@ -598,12 +756,48 @@ def delta_begin(sig_pp: CTypesData) -> CTypesData:
     When the job completes, the signature handle must be deallocated with
     :meth:`free_sig` and the job handle must be deallocated with :meth:`free_job`.
 
+    :param sig_pp: The signature handle
+    :type sig_pp: CTypesData
     :returns: The job handle
     :rtype: CTypesData
     :raises RsCApiError: If something goes wrong while inside the C API
     """
     _build_hash_table(sig_pp)  # The signature must be indexed before use
     return _lib.rs_delta_begin(sig_pp[0])
+
+
+def get_delta_stats(sig_pp: CTypesData) -> MatchStats:
+    """Get delta file generation statistics.
+
+    :param sig_pp: The signature handle
+    :type sig_pp: CTypesData
+    :returns: The signature match statistics
+    :rtype: MatchStats
+    :raises NotImplementedError: If librsync was compiled without match
+    statistics support
+    """
+    sig_p = sig_pp[0]
+
+    if getattr(sig_p[0], "calc_strong_count", None) is None:
+        err = "Librsync was compiled without `HASHTABLE_NSTATS` support."
+        raise NotImplementedError(err)
+
+    if sig_p[0].hashtable == _ffi.NULL:
+        return MatchStats(
+            find_count=0,
+            match_count=0,
+            hashcmp_count=0,
+            entrycmp_count=0,
+            strongsum_calc_count=0,
+        )
+
+    return MatchStats(
+        find_count=sig_p[0].hashtable.find_count,
+        match_count=sig_p[0].hashtable.match_count,
+        hashcmp_count=sig_p[0].hashtable.hashcmp_count,
+        entrycmp_count=sig_p[0].hashtable.entrycmp_count,
+        strongsum_calc_count=sig_p[0].calc_strong_count,
+    )
 
 
 def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
@@ -647,3 +841,43 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     _global_weakkeydict[job_p] = patch_handle_p
 
     return job_p
+
+
+def get_job_stats(job_p: CTypesData) -> JobStats:
+    """Get librsync job statistics.
+
+    :param job_p: The job handle
+    :type job_p: CTypesData
+    :returns: The job statistics
+    :rtype: JobStats
+    """
+    raw_stats = _lib.rs_job_statistics(job_p)
+
+    if raw_stats.op != _ffi.NULL:
+        job_type = cast(bytes, _ffi.buffer(raw_stats.op, 20)[:])
+        job_type = job_type[: job_type.index(b"\x00")].decode()
+    else:
+        job_type = ""
+
+    return JobStats(
+        job_type=JobStats.JobType(job_type),
+        lit_cmds=raw_stats.lit_cmds,
+        lit_bytes=raw_stats.lit_bytes,
+        lit_cmdbytes=raw_stats.lit_cmdbytes,
+        copy_cmds=raw_stats.copy_cmds,
+        copy_bytes=raw_stats.copy_bytes,
+        copy_cmdbytes=raw_stats.copy_cmdbytes,
+        sig_cmds=raw_stats.sig_cmds,
+        sig_bytes=raw_stats.sig_bytes,
+        false_matches=raw_stats.false_matches,
+        sig_blocks=raw_stats.sig_blocks,
+        block_len=raw_stats.block_len,
+        in_bytes=raw_stats.in_bytes,
+        out_bytes=raw_stats.out_bytes,
+        start_time=datetime.fromtimestamp(raw_stats.start, timezone.utc),
+        completion_time=(
+            datetime.fromtimestamp(raw_stats.end, timezone.utc)
+            if raw_stats.end
+            else None
+        ),
+    )
