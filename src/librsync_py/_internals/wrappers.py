@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
 from librsync_py._internals import RsResult
-from librsync_py.exceptions import RsCApiError, RsParamError, RsUnknownError
+from librsync_py.exceptions import RsCApiError, RsUnknownError
 
 from . import _ffi, _lib
 
@@ -407,7 +407,7 @@ def _get_sig_args(
 ) -> tuple[RsSignatureMagic, int, int]:
     """Get recommended arguments for generating a file signature.
 
-    :param filesize: The size of the file.
+    :param filesize: The size of the file. Use 0 for "unknown".
     :type filesize: int
     :param sig_magic: The signature type. Use 0 for recommended.
     :type sig_magic: Union[int, RsSignatureMagic]
@@ -422,16 +422,10 @@ def _get_sig_args(
     :rtype: tuple[RsSignatureMagic, int, int]
     :raises RsCApiError: If something goes wrong while inside the C API
     """
-    # TODO: Should hash_length be checked against min and max allowed value?
-    # The C code does this but also prints out nasty warning/error messages
-    # to stdout
-    if (
-        filesize < 0
-        or (not isinstance(sig_magic, RsSignatureMagic) and sig_magic != 0)
-        or block_length < 0
-        or hash_length < -1
-    ):
-        raise RsParamError
+    _validate_sig_args(sig_magic, block_length, hash_length, get_sig_args_call=True)
+    if filesize < 0:
+        err = "Filesize must be >= 0"
+        raise ValueError(err)
 
     sig_magic_p = _ffi.new("rs_magic_number *", sig_magic)
     block_length_p = _ffi.new("size_t *", block_length)
@@ -458,6 +452,7 @@ def _build_hash_table(sig_pp: CTypesData) -> None:
     :type sig_pp: CTypesData
     :raises RsCApiError: If something goes wrong while inside the C API
     """
+    _validate_signature(sig_pp)
     _handle_rs_result(_lib.rs_build_hash_table(sig_pp[0]))
 
 
@@ -595,6 +590,90 @@ def _patch_copy_callback(
     return RsResult.DONE
 
 
+def _validate_sig_args(
+    magic: RsSignatureMagic,
+    block_length: int,
+    hash_length: int,
+    *,
+    get_sig_args_call: bool = False,
+) -> None:
+    """Check that args for rs_sig_begin() or rs_get_sig_args() are valid.
+
+    Replicates the `rs_sig_args_check()` macro.
+
+    :param magic: The signature magic
+    :type magic: RsSignatureMagic
+    :param block_length: The signature block length
+    :type block_length: int
+    :param hash_length: The signature hash length
+    :type hash_length: int
+    :param get_sig_args_call: True if this is a call to `rs_get_sig_args()`
+    :type get_sig_args_call:  bool
+    :raises ValueError: If validation fails
+    """
+    err = ""
+
+    if not isinstance(magic, RsSignatureMagic):
+        err = "Invalid signature magic."
+    elif not (
+        hash_length <= _lib.RS_MD4_SUM_LENGTH
+        and magic in (RsSignatureMagic.MD4_SIG, RsSignatureMagic.RK_MD4_SIG)
+    ):
+        err = f"Signature hash length must be <={_lib.RS_MD4_SUM_LENGTH}"
+    elif not (
+        hash_length <= _lib.RS_BLAKE2_SUM_LENGTH
+        and magic in (RsSignatureMagic.BLAKE2_SIG, RsSignatureMagic.RK_BLAKE2_SIG)
+    ):
+        err = f"Signature hash length must be <={_lib.RS_BLAKE2_SUM_LENGTH}"
+    elif not ((-1 if get_sig_args_call else 0) < hash_length):
+        err = f"Signature hash length must be >={(-1 if get_sig_args_call else 0)}"
+    elif not (block_length > 0):
+        err = "Signature block length must be > 0"
+
+    if err:
+        raise ValueError(err)
+
+
+def _validate_signature(sig_pp: CTypesData) -> None:
+    """Check that a signature is valid.
+
+    Replicates the `rs_signature_check()` macro.
+
+    :raises ValueError: If validation fails
+    """
+    err = ""
+    sig = sig_pp[0][0]
+
+    _validate_sig_args(sig.magic, sig.block_len, sig.strong_sum_len)
+
+    if not (
+        sig.count >= 0
+        and sig.count <= sig.size
+        and (sig.hashtable == _ffi.NULL or sig.hashtable.count <= sig.count)
+    ):
+        err = "Invalid signature."
+
+    if err:
+        raise ValueError(err)
+
+
+def _validate_job(job_p: CTypesData) -> None:
+    """Check that a job is valid.
+
+    Replicates the `rs_job_check()` macro.
+
+    :raises ValueError: If validation fails
+    """
+    err = ""
+    job = job_p[0]
+
+    if job.dogtag != 20010225:  # noqa: PLR2004
+        err = "Invalid job."
+
+    if err:
+        raise ValueError(err)
+
+
 def job_iter(
     job_p: CTypesData,
     input_: bytes,
@@ -633,6 +712,8 @@ def job_iter(
     the produced output data in that order
     :rtype: tuple[RsStatus, bytes, bytes]
     """
+    _validate_job(job_p)
+
     if max_output_size == 0:
         max_output_size = len(input_)
 
@@ -762,7 +843,9 @@ def delta_begin(sig_pp: CTypesData) -> CTypesData:
     :rtype: CTypesData
     :raises RsCApiError: If something goes wrong while inside the C API
     """
-    _build_hash_table(sig_pp)  # The signature must be indexed before use
+    # The signature must be indexed before use
+    # _build_hash_table will also validate it
+    _build_hash_table(sig_pp)
     return _lib.rs_delta_begin(sig_pp[0])
 
 
@@ -816,17 +899,6 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     :rtype: CTypesData
     :raises ValueError: If there is something wrong with the provided arugments
     """
-    err = ""
-    if not isinstance(basis, (io.BufferedIOBase, io.RawIOBase)):
-        err = "Expected a binary file-like object."
-    if basis.closed or not basis.readable():
-        err = "Expected a file-like object that is open for reading."
-    if not basis.seekable():
-        err = "Expected a file-like object which supports random access (.seek())."
-
-    if err:
-        raise ValueError(err)
-
     patch_handle = _PatchHandle(basis)
     patch_handle_p = _ffi.new_handle(patch_handle)
 
