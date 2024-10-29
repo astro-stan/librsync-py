@@ -422,7 +422,13 @@ def _get_sig_args(
     :rtype: tuple[RsSignatureMagic, int, int]
     :raises RsCApiError: If something goes wrong while inside the C API
     """
+    if sig_magic == 0:
+        # Set the value the lib recommends, so that signature arg validation
+        # can pass
+        sig_magic = RsSignatureMagic.RK_BLAKE2_SIG
+
     _validate_sig_args(sig_magic, block_length, hash_length, get_sig_args_call=True)
+
     if filesize < 0:
         err = "Filesize must be >= 0"
         raise ValueError(err)
@@ -613,22 +619,20 @@ def _validate_sig_args(
     """
     err = ""
 
-    if not isinstance(magic, RsSignatureMagic):
+    max_hash_length = (
+        _lib.RS_MD4_SUM_LENGTH
+        if magic in (RsSignatureMagic.MD4_SIG, RsSignatureMagic.RK_MD4_SIG)
+        else _lib.RS_BLAKE2_SUM_LENGTH
+    )
+
+    if magic not in iter(RsSignatureMagic):
         err = "Invalid signature magic."
-    elif not (
-        hash_length <= _lib.RS_MD4_SUM_LENGTH
-        and magic in (RsSignatureMagic.MD4_SIG, RsSignatureMagic.RK_MD4_SIG)
-    ):
-        err = f"Signature hash length must be <={_lib.RS_MD4_SUM_LENGTH}"
-    elif not (
-        hash_length <= _lib.RS_BLAKE2_SUM_LENGTH
-        and magic in (RsSignatureMagic.BLAKE2_SIG, RsSignatureMagic.RK_BLAKE2_SIG)
-    ):
-        err = f"Signature hash length must be <={_lib.RS_BLAKE2_SUM_LENGTH}"
-    elif not ((-1 if get_sig_args_call else 0) < hash_length):
+    elif hash_length > max_hash_length:
+        err = f"Signature hash length must be <={max_hash_length}"
+    elif hash_length < (-1 if get_sig_args_call else 0):
         err = f"Signature hash length must be >={(-1 if get_sig_args_call else 0)}"
-    elif not (block_length > 0):
-        err = "Signature block length must be > 0"
+    elif block_length < 0:
+        err = "Signature block length must be >0"
 
     if err:
         raise ValueError(err)
