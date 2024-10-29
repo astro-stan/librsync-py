@@ -287,6 +287,88 @@ class _PatchHandle:
             raise ValueError(err)
 
 
+def _validate_sig_args(
+    magic: RsSignatureMagic,
+    block_length: int,
+    hash_length: int,
+    *,
+    get_sig_args_call: bool = False,
+) -> None:
+    """Check that args for rs_sig_begin() or rs_get_sig_args() are valid.
+
+    Replicates the `rs_sig_args_check()` macro.
+
+    :param magic: The signature magic
+    :type magic: RsSignatureMagic
+    :param block_length: The signature block length
+    :type block_length: int
+    :param hash_length: The signature hash length
+    :type hash_length: int
+    :param get_sig_args_call: True if this is a call to `rs_get_sig_args()`
+    :type get_sig_args_call:  bool
+    :raises ValueError: If validation fails
+    """
+    err = ""
+
+    max_hash_length = (
+        _lib.RS_MD4_SUM_LENGTH
+        if magic in (RsSignatureMagic.MD4_SIG, RsSignatureMagic.RK_MD4_SIG)
+        else _lib.RS_BLAKE2_SUM_LENGTH
+    )
+
+    if magic not in iter(RsSignatureMagic):
+        err = "Invalid signature magic."
+    elif hash_length > max_hash_length:
+        err = f"Signature hash length must be <={max_hash_length}"
+    elif hash_length < (-1 if get_sig_args_call else 0):
+        err = f"Signature hash length must be >={(-1 if get_sig_args_call else 0)}"
+    elif block_length < 0:
+        err = "Signature block length must be >0"
+
+    if err:
+        raise ValueError(err)
+
+
+def _validate_signature(sig_pp: CTypesData) -> None:
+    """Check that a signature is valid.
+
+    Replicates the `rs_signature_check()` macro.
+
+    :raises ValueError: If validation fails
+    """
+    err = ""
+    sig = sig_pp[0][0]
+
+    _validate_sig_args(sig.magic, sig.block_len, sig.strong_sum_len)
+
+    if not (
+        sig.count >= 0
+        and sig.count <= sig.size
+        and (sig.hashtable == _ffi.NULL or sig.hashtable.count <= sig.count)
+    ):
+        err = "Invalid signature."
+
+    if err:
+        raise ValueError(err)
+
+
+def _validate_job(job_p: CTypesData) -> None:
+    """Check that a job is valid.
+
+    Replicates the `rs_job_check()` macro.
+
+    :raises ValueError: If validation fails
+    """
+    err = ""
+    job = job_p[0]
+
+    if job.dogtag != 20010225:  # noqa: PLR2004
+        err = "Invalid job."
+
+    if err:
+        raise ValueError(err)
+
+
 def _handle_rs_result(
     result: int | RsResult,
     *,
@@ -594,88 +676,6 @@ def _patch_copy_callback(
     c_buffer[:] = data
 
     return RsResult.DONE
-
-
-def _validate_sig_args(
-    magic: RsSignatureMagic,
-    block_length: int,
-    hash_length: int,
-    *,
-    get_sig_args_call: bool = False,
-) -> None:
-    """Check that args for rs_sig_begin() or rs_get_sig_args() are valid.
-
-    Replicates the `rs_sig_args_check()` macro.
-
-    :param magic: The signature magic
-    :type magic: RsSignatureMagic
-    :param block_length: The signature block length
-    :type block_length: int
-    :param hash_length: The signature hash length
-    :type hash_length: int
-    :param get_sig_args_call: True if this is a call to `rs_get_sig_args()`
-    :type get_sig_args_call:  bool
-    :raises ValueError: If validation fails
-    """
-    err = ""
-
-    max_hash_length = (
-        _lib.RS_MD4_SUM_LENGTH
-        if magic in (RsSignatureMagic.MD4_SIG, RsSignatureMagic.RK_MD4_SIG)
-        else _lib.RS_BLAKE2_SUM_LENGTH
-    )
-
-    if magic not in iter(RsSignatureMagic):
-        err = "Invalid signature magic."
-    elif hash_length > max_hash_length:
-        err = f"Signature hash length must be <={max_hash_length}"
-    elif hash_length < (-1 if get_sig_args_call else 0):
-        err = f"Signature hash length must be >={(-1 if get_sig_args_call else 0)}"
-    elif block_length < 0:
-        err = "Signature block length must be >0"
-
-    if err:
-        raise ValueError(err)
-
-
-def _validate_signature(sig_pp: CTypesData) -> None:
-    """Check that a signature is valid.
-
-    Replicates the `rs_signature_check()` macro.
-
-    :raises ValueError: If validation fails
-    """
-    err = ""
-    sig = sig_pp[0][0]
-
-    _validate_sig_args(sig.magic, sig.block_len, sig.strong_sum_len)
-
-    if not (
-        sig.count >= 0
-        and sig.count <= sig.size
-        and (sig.hashtable == _ffi.NULL or sig.hashtable.count <= sig.count)
-    ):
-        err = "Invalid signature."
-
-    if err:
-        raise ValueError(err)
-
-
-def _validate_job(job_p: CTypesData) -> None:
-    """Check that a job is valid.
-
-    Replicates the `rs_job_check()` macro.
-
-    :raises ValueError: If validation fails
-    """
-    err = ""
-    job = job_p[0]
-
-    if job.dogtag != 20010225:  # noqa: PLR2004
-        err = "Invalid job."
-
-    if err:
-        raise ValueError(err)
 
 
 def job_iter(
