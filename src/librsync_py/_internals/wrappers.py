@@ -389,10 +389,7 @@ def _handle_rs_result(
     if result == RsResult.DONE:
         return RsResult(result)
 
-    if raise_on_non_error_results and result in (
-        RsResult.BLOCKED,
-        RsResult.RUNNING,
-    ):
+    if raise_on_non_error_results and result == RsResult.BLOCKED:
         return RsResult(result)
 
     exc_candidates = [x for x in RsCApiError.__subclasses__() if result == x.RESULT]
@@ -482,14 +479,14 @@ def _get_job_t_copy_arg(job_p: CTypesData) -> Any | None:  # noqa: ANN401
 
 
 def _get_sig_args(
-    filesize: int = 0,
+    filesize: int = -1,
     sig_magic: int | RsSignatureMagic = 0,
     block_length: int = 0,
     hash_length: int = 0,
 ) -> tuple[RsSignatureMagic, int, int]:
     """Get recommended arguments for generating a file signature.
 
-    :param filesize: The size of the file. Use 0 for "unknown".
+    :param filesize: The size of the file. Use -1 for "unknown".
     :type filesize: int
     :param sig_magic: The signature type. Use 0 for recommended.
     :type sig_magic: Union[int, RsSignatureMagic]
@@ -511,7 +508,8 @@ def _get_sig_args(
 
     _validate_sig_args(sig_magic, block_length, hash_length, get_sig_args_call=True)
 
-    if filesize < 0:
+    # -1 is allowed, as it means "unknown"
+    if filesize < -1:
         err = "Filesize must be >= 0"
         raise ValueError(err)
 
@@ -776,7 +774,7 @@ def sig_begin(
     The job handle must be deallocated with :meth:`free_job` when no longer needed
     or the job completes.
 
-    :param filesize: The size of the file.
+    :param filesize: The size of the file. Use -1 for "unknown"
     :type filesize: int
     :param sig_magic: The signature type. Use 0 for recommended.
     :type sig_magic: Union[int, RsSignatureMagic]
