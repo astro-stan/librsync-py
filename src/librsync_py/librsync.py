@@ -10,13 +10,8 @@ from threading import Lock
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 from librsync_py import RsResult, RsSignatureMagic
-from librsync_py._internals.wrappers import (
-    JobStats,
-    free_job,
-    get_job_stats,
-    job_iter,
-    sig_begin,
-)
+from librsync_py._internals.wrappers import (JobStats, free_job, get_job_stats,
+                                             job_iter, sig_begin)
 
 if version_info < (3, 11):  # pragma: no cover
     from typing_extensions import Self
@@ -80,18 +75,24 @@ class Job(io.BufferedIOBase):
         if len(self._buf) >= size and size >= 0:
             out = self._buf[:size]
             self._buf = self._buf[size:]
-            return out
+            return bytes(out)
+
+        chunks = [self._buf]
+        total_length = len(self._buf)
 
         chunk_size = max(self.buffer_size, size)
+        c_buffer = bytearray(chunk_size)
 
         result = RsResult.BLOCKED
         while result == RsResult.BLOCKED:
-            chunk = bytearray(chunk_size)
-            with memoryview(chunk) as m:
-                result, written = self._readinto_unlocked(m)
-            self._buf += bytes(chunk[:written])
-            if len(self._buf) >= size and size >=0:
+            with memoryview(c_buffer) as mv:
+                result, written = self._readinto_unlocked(mv)
+                chunks.append(mv[:written].tobytes())
+                total_length += written
+            if total_length >= size and size >=0:
                 break
+
+        self._buf = bytearray().join(chunks)
 
         if size < 0:
             size = len(self._buf)
