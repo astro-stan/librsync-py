@@ -90,7 +90,7 @@ class Job(io.BufferedIOBase):
             with memoryview(chunk) as m:
                 result, written = self._readinto_unlocked(m)
             self._buf += bytes(chunk[:written])
-            if len(self._buf) >= size:
+            if len(self._buf) >= size and size >=0:
                 break
 
         if size < 0:
@@ -113,8 +113,8 @@ class Job(io.BufferedIOBase):
                 result, read, written = job_iter(
                     self._job,
                     ib,
-                    buf,
-                    eof=bool(cap),
+                    buf[out_pos:],
+                    eof=not bool(cap),
                 )
 
             self._raw_buf = self._raw_buf[read:]
