@@ -201,6 +201,7 @@ python.install_sources(
     files([
         'src' / meson.project_name() / '__init__.py',
         'src' / meson.project_name() / 'exceptions.py',
+        'src' / meson.project_name() / 'librsync.py',
     ]),
     subdir: meson.project_name(),
 )
