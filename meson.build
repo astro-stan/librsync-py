@@ -30,7 +30,6 @@ librsync_py_pyext_h_name = '@0@.h'.format(librsync_py_pyext_name)
 
 # C_args to pass to cmake when building librsync
 librsync_cmake_defines = {
-    'NDEBUG': '1', # Discard assert macros
     'BUILD_RDIFF': 'OFF', # Do not build the `rdiff` target
     'BUILD_SHARED_LIBS':'OFF',
     'CMAKE_POSITION_INDEPENDENT_CODE': 'ON',
