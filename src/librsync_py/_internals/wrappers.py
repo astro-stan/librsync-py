@@ -401,8 +401,8 @@ def _handle_rs_result(
 
 
 def _new_rs_buffers_t_p_handle(
-    input_: bytes,
-    output: bytearray,
+    input_: memoryview,
+    output: memoryview,
     *,
     eof: bool = False,
 ) -> CTypesData:
@@ -410,15 +410,27 @@ def _new_rs_buffers_t_p_handle(
 
     This handle will be automatically freed when no longer referenced.
 
-    :param input: The input buffer
-    :type input: bytes
+    :param input_: The input buffer
+    :type input_: memoryview
     :param output: The output buffer
-    :type output: bytearray
+    :type output: memoryview
     :param eof: True if this is the last input data from a given input stream.
     :type eof: bool
     :returns: The rs_buffers_t handle
     :rtype: CTypesData
+    :raises ValueError: If memoryview objects do not represent a C char array.
     """
+    err_explanation = (
+        "buffer must repesent a single dimensional, contiguous memory "
+        "region where each element is 1 byte long (i.e. a `char[]`)"
+    )
+    if input_.ndim != 1 or input_.itemsize != 1 or not input_.c_contiguous:
+        err = f"input {err_explanation}"
+        raise ValueError(err)
+    if output.ndim != 1 or output.itemsize != 1 or not output.c_contiguous:
+        err = f"output {err_explanation}"
+        raise ValueError(err)
+
     buffers_p = _ffi.new("rs_buffers_t *")
 
     in_buf_p = _ffi.from_buffer("char[]", input_, require_writable=False)
@@ -678,48 +690,47 @@ def _patch_copy_callback(
 
 def job_iter(
     job_p: CTypesData,
-    input_: bytes,
-    max_output_size: int = 0,
+    input_: memoryview,
+    output: memoryview,
     *,
     eof: bool = False,
-) -> tuple[RsResult, bytes, bytes]:
+) -> tuple[RsResult, int, int]:
     """Run a single iteration of a given job.
 
-    Calls `rs_job_iter` once and passes it the data inside the `input` buffer.
+    Calls `rs_job_iter` once and passes it the data inside the `input_` buffer.
 
-    After the call any remaining input data is returned alongside all of the
-    produced output data.
+    The produced output is stored inside the `output` buffer.
 
-    The result of the iteration is also returned. If the returned result is
-    :class:`RsResult.DONE` no more iterations are necessary. However, a returned
-    result of :class:`RsResult.BLOCKED` means one of 3 things:
+    The result of the iteration is returned along with the consumed input length
+    and produced output length.
+
+    If the returned result is :class:`RsResult.DONE` no more iterations are
+    necessary and the job has completed. However, a returned result of
+    :class:`RsResult.BLOCKED` means one of 3 things:
 
     - More input data is needed. If there is no more input data call this
     function again with an empty input buffer and set the `eof` flag to `True`.
-    - There is more output data to be returned.
+    - There is more output data to be returned. NOTE: The output buffer may be
+      too small. Try again with a larger buffer if you keep getting this result.
     - Both of the above
 
     NOTE: The job_p handle must be deallocated with :meth:`free_job` when the
     result of the iteration is :class:`RsStatus.DONE` or the job and its results
     are no longer needed.
 
-    :param input: The input buffer
-    :type input: bytes
-    :param max_output_size: The maximum size of the output data buffer. Set to `0`
-    to use the same size as the input buffer (`len(input)`).
-    :type max_output_size: int
+    :param input_: The input buffer
+    :type input_: memoryview
+    :param output: The output buffer
+    :type output: memoryview
     :param eof: True if this is the last input data from a given input stream.
     :type eof: bool
-    :returns: The result of the iteration, the remaining input buffer data and
-    the produced output data in that order
-    :rtype: tuple[RsStatus, bytes, bytes]
+    :returns: The result of the iteration, the length of the consumed input
+    and the length of the produced output in this order
+    :rtype: tuple[RsStatus, int, int]
+    :raises ValueError: If argument validation fails
     """
     _validate_job(job_p)
 
-    if max_output_size == 0:
-        max_output_size = len(input_)
-
-    output = bytearray(max_output_size)
     buffers_p = _new_rs_buffers_t_p_handle(input_, output, eof=eof)
 
     try:
@@ -735,13 +746,10 @@ def job_iter(
             raise copy_arg.exc from e
         raise
 
-    unused_in_size = _get_rs_buffers_t_unused_input_data_size(buffers_p)
-    unused_out_size = _get_rs_buffers_t_unused_output_data_size(buffers_p)
-
     return (
         result,
-        input_[len(input_) - unused_in_size :],
-        bytes(output[: (len(output) - unused_out_size)]),
+        len(input_) - _get_rs_buffers_t_unused_input_data_size(buffers_p),
+        len(output) - _get_rs_buffers_t_unused_output_data_size(buffers_p),
     )
 
 
