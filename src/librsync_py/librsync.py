@@ -86,7 +86,7 @@ class Job(io.BufferedIOBase):
         result = RsResult.BLOCKED
         while result == RsResult.BLOCKED:
             with memoryview(c_buffer) as mv:
-                result, written = self._readinto_unlocked(mv)
+                result, written = self._chunk_readinto_unlocked(mv)
                 chunks.append(mv[:written].tobytes())
                 total_length += written
             if total_length >= size and size >=0:
@@ -101,7 +101,7 @@ class Job(io.BufferedIOBase):
         self._buf = self._buf[size:]
         return bytes(out)
 
-    def _readinto_unlocked(self: Self, buf: memoryview) -> tuple[RsResult, int]:
+    def _chunk_readinto_unlocked(self: Self, buf: memoryview) -> tuple[RsResult, int]:
         out_pos = 0
         out_cap = len(buf)
 
