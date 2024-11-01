@@ -4,7 +4,9 @@
 """Python bindings for the librsync library."""
 
 from librsync_py._internals import RsResult
+from librsync_py._internals.wrappers import RsSignatureMagic
 
 __all__ = [
     "RsResult",
+    "RsSignatureMagic",
 ]
