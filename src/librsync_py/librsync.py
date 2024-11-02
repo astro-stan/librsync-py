@@ -11,8 +11,13 @@ from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 from librsync_py import RsResult, RsSignatureMagic
-from librsync_py._internals.wrappers import (JobStats, free_job, get_job_stats,
-                                             job_iter, sig_begin)
+from librsync_py._internals.wrappers import (
+    JobStats,
+    free_job,
+    get_job_stats,
+    job_iter,
+    sig_begin,
+)
 
 if version_info < (3, 11):  # pragma: no cover
     from typing_extensions import Self
@@ -60,7 +65,8 @@ class Job(io.BufferedIOBase):
 
     def read(self: Self, size: int | None = -1) -> bytes:
         """Read from stream."""
-        return self._read_unlocked(size)
+        with self._read_lock:
+            return self._read_unlocked(size)
 
     def close(self: Self) -> None:
         """Close stream."""
