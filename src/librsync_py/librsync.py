@@ -10,8 +10,9 @@ from sys import version_info
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
-from librsync_py import RsResult
-from librsync_py._internals.wrappers import JobStats, get_job_stats, job_iter
+from librsync_py import RsResult, RsSignatureMagic
+from librsync_py._internals.wrappers import (JobStats, free_job, get_job_stats,
+                                             job_iter, sig_begin)
 
 if version_info < (3, 11):  # pragma: no cover
     from typing_extensions import Self
@@ -23,7 +24,12 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class Job(io.BufferedIOBase):
-    """Librsync job wrapper."""
+    """Librsync job wrapper.
+
+    Accepts a librsync job, allocated with `sig_begin`, `loadsig_begin`,
+    `delta_begin` or `patch_begin`. The job will be automatically deallocated
+    with `free_job` when this object is garbage collected.
+    """
 
     def __init__(
         self: Self,
@@ -172,6 +178,13 @@ class Job(io.BufferedIOBase):
         """Get job statistics."""
         return get_job_stats(self.__job)
 
+    def __del__(self) -> None:
+        """Deallocate the object."""
+        if self.__job:
+            free_job(self.__job)
+            self.__job = None
+        return super().__del__()
+
     def __getstate__(self: Self) -> dict:
         """Pickle object."""
         msg = f"cannot pickle {self.__class__.__name__!r} object"
@@ -192,3 +205,49 @@ class Job(io.BufferedIOBase):
             return f"<{modname}.{clsname}>"
         else:
             return f"<{modname}.{clsname} name={name!r}>"
+
+
+class Signature(Job):
+    """Generate a new signature.
+
+    Creates a new io.BufferedReader object, which can be read to get the
+    signature data.
+
+    :param raw: The source stream
+    :type raw: io.RawIOBase
+    :param buffer_size: The size of the cache buffer in bytes. For files above
+    1GB, good values are typically in the range of 1MB-16MB. Experimentation
+    and/or profiling may be needed to achieve optimal results
+    :type buffer_size: int
+    :file_size: The size of the file-like object represented by the raw stream.
+    Set to `None` if unknown
+    :type file_size: int
+    :param block_length: The signature block length. Larger values make a
+    shorter signature but increase the delta file size. Use 0 for recommended.
+    :type block_length: int
+    :param hash_length: The signature hash (strongsum) length. Smaller values
+    make signatures shorter but increase the chance for corruption due to
+    hash collisions. Use `0` for maximum or `-1` for minimum.
+    :type hash_length: int
+    """
+
+    def __init__(  # noqa: PLR0913
+        self: Self,
+        raw: io.RawIOBase,
+        buffer_size: int = io.DEFAULT_BUFFER_SIZE,
+        file_size: int | None = None,
+        sig_magic: RsSignatureMagic = RsSignatureMagic.RK_BLAKE2_SIG,
+        block_length: int = 0,
+        hash_length: int = 0,
+    ) -> None:
+        """Create the object."""
+        super().__init__(
+            sig_begin(
+                filesize=file_size or -1,
+                sig_magic=sig_magic,
+                block_length=block_length,
+                hash_length=hash_length,
+            ),
+            raw=raw,
+            buffer_size=buffer_size,
+        )
