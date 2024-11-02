@@ -11,13 +11,8 @@ from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 from librsync_py import RsResult, RsSignatureMagic
-from librsync_py._internals.wrappers import (
-    JobStats,
-    free_job,
-    get_job_stats,
-    job_iter,
-    sig_begin,
-)
+from librsync_py._internals.wrappers import (JobStats, free_job, get_job_stats,
+                                             job_iter, sig_begin)
 
 if version_info < (3, 11):  # pragma: no cover
     from typing_extensions import Self
@@ -216,8 +211,9 @@ class Job(io.BufferedIOBase):
 class Signature(Job):
     """Generate a new signature.
 
-    Creates a new io.BufferedReader object, which can be read to get the
-    signature data.
+    Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
+    which can be read to get the signature data. Note however, that this
+    object is not seekable.
 
     :param raw: The source stream
     :type raw: io.RawIOBase
