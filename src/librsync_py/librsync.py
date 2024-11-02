@@ -84,13 +84,13 @@ class Job(io.BufferedIOBase):
         c_buffer = bytearray(chunk_size)
 
         result = RsResult.BLOCKED
-        while result == RsResult.BLOCKED:
-            with memoryview(c_buffer) as mv:
+        with memoryview(c_buffer) as mv:
+            while result == RsResult.BLOCKED:
                 result, written = self._chunk_readinto_unlocked(mv)
                 chunks.append(mv[:written].tobytes())
                 total_length += written
-            if total_length >= size and size >=0:
-                break
+                if total_length >= size and size >=0:
+                    break
 
         self._buf = bytearray().join(chunks)
 
