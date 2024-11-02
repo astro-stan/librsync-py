@@ -65,15 +65,18 @@ class Job(io.BufferedIOBase):
 
     def readable(self: Self) -> bool:
         """Check if the stream is readeable."""
+        self._checkClosed()
         return self.raw.readable()
 
     def read(self: Self, size: int | None = -1) -> bytes:
         """Read up to size bytes."""
+        self._checkClosed()
         with self._read_lock:
             return self._read_unlocked(size, read1=False)
 
     def read1(self: Self, size: int | None = -1) -> bytes:
         """Read up to size bytes while performing at most 1 read() system call."""
+        self._checkClosed()
         with self._read_lock:
             return self._read_unlocked(size, read1=True)
 
@@ -85,6 +88,7 @@ class Job(io.BufferedIOBase):
         :returns: The size of the read data in bytes
         :rtype: int
         """
+        self._checkClosed()
         if not isinstance(buffer, memoryview):
             buffer = memoryview(buffer)
         if buffer.readonly:
@@ -104,6 +108,7 @@ class Job(io.BufferedIOBase):
         :returns: The size of the read data in bytes
         :rtype: int
         """
+        self._checkClosed()
         if not isinstance(buffer, memoryview):
             buffer = memoryview(buffer)
         if buffer.readonly:
@@ -250,6 +255,7 @@ class Job(io.BufferedIOBase):
 
     def __del__(self) -> None:
         """Deallocate the object."""
+        self.close()
         if self.__job:
             free_job(self.__job)
             self.__job = None
