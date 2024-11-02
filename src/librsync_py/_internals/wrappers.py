@@ -769,7 +769,7 @@ def free_job(job_p: CTypesData) -> None:
 
 
 def sig_begin(
-    filesize: int = 0,
+    filesize: int = -1,
     sig_magic: int | RsSignatureMagic = 0,
     block_length: int = 0,
     hash_length: int = 0,
