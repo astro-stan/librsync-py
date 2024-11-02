@@ -68,12 +68,17 @@ class Job(io.BufferedIOBase):
         return self.raw.readable()
 
     def read(self: Self, size: int | None = -1) -> bytes:
-        """Read from stream."""
+        """Read up to size bytes."""
         with self._read_lock:
-            return self._read_unlocked(size)
+            return self._read_unlocked(size, read1=False)
+
+    def read1(self: Self, size: int | None = -1) -> bytes:
+        """Read up to size bytes while performing at most 1 read() system call."""
+        with self._read_lock:
+            return self._read_unlocked(size, read1=True)
 
     def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:
-        """Read from stream into a buffer.
+        """Read up to size bytes into a buffer.
 
         :param buffer: The buffer to store the read data into
         :type buffer: Union[bytearray, memoryview, array]
@@ -88,7 +93,26 @@ class Job(io.BufferedIOBase):
         buffer = buffer.cast("B")
 
         with self._read_lock:
-            _, length = self._readinto_unlocked(buffer)
+            _, length = self._readinto_unlocked(buffer, read1=False)
+            return length
+
+    def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:
+        """Read up to size bytes into a buffer while performing at most 1 read() system call.
+
+        :param buffer: The buffer to store the read data into
+        :type buffer: Union[bytearray, memoryview, array]
+        :returns: The size of the read data in bytes
+        :rtype: int
+        """
+        if not isinstance(buffer, memoryview):
+            buffer = memoryview(buffer)
+        if buffer.readonly:
+            msg = '"buffer" must be writable'
+            raise ValueError(msg)
+        buffer = buffer.cast("B")
+
+        with self._read_lock:
+            _, length = self._readinto_unlocked(buffer, read1=True)
             return length
 
     def close(self: Self) -> None:
@@ -105,13 +129,20 @@ class Job(io.BufferedIOBase):
         self._raw = None
         return raw
 
-    def _read_unlocked(self: Self, size: int | None = -1) -> bytes:
+    def _read_unlocked(
+        self: Self,
+        size: int | None = -1,
+        *,
+        read1: bool = False,
+    ) -> bytes:
         """Read from the stream, without thread safety.
 
         :param size: The maximum amount of bytes to read.
         :type size: Optional[int]
         :returns: The read data.
         :rtype: bytes
+        :param read1: Perform at most 1 read() system call.
+        :type read1: bool
         :raises RsCApiError: If something goes wrong during the read.
         :raises ValueError: If input param validation fails.
         """
@@ -135,10 +166,10 @@ class Job(io.BufferedIOBase):
         result = RsResult.BLOCKED
         with memoryview(c_buffer) as mv:
             while result == RsResult.BLOCKED:
-                result, written = self._readinto_unlocked(mv)
+                result, written = self._readinto_unlocked(mv, read1=read1)
                 chunks.append(mv[:written].tobytes())
                 total_length += written
-                if total_length >= size and size >= 0:
+                if (total_length >= size and size >= 0) or read1:
                     break
 
         self._buf = bytearray().join(chunks)
@@ -150,13 +181,20 @@ class Job(io.BufferedIOBase):
         self._buf = self._buf[size:]
         return bytes(out)
 
-    def _readinto_unlocked(self: Self, buf: memoryview) -> tuple[RsResult, int]:
+    def _readinto_unlocked(
+        self: Self,
+        buf: memoryview,
+        *,
+        read1: bool = False,
+    ) -> tuple[RsResult, int]:
         """Read from the stream into a buffer, without thread safety.
 
         :param buf: The buffer to store the read data into.
         :type buf: memoryview
         :returns: The result of the operation and the bytes written to the buffer.
         :rtype: tuple[RsResult, int]
+        :param read1: Perform at most 1 read() system call.
+        :type read1: bool
         :raises RsCApiError: If something goes wrong during the read.
         :raises ValueError: If input param validation fails.
         """
@@ -179,6 +217,9 @@ class Job(io.BufferedIOBase):
             self._raw_buf = self._raw_buf[read:]
             out_pos += written
             out_cap -= written
+
+            if read1:
+                break
 
         return result, out_pos
 
