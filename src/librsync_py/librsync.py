@@ -6,20 +6,29 @@
 from __future__ import annotations
 
 import io
-from sys import version_info
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from librsync_py import RsResult, RsSignatureMagic
-from librsync_py._internals.wrappers import (JobStats, free_job, get_job_stats,
-                                             job_iter, sig_begin)
-
-if version_info < (3, 11):  # pragma: no cover
-    from typing_extensions import Self
-else:  # pragma: no cover
-    from typing import Self
+from librsync_py._internals.wrappers import (
+    JobStats,
+    free_job,
+    get_job_stats,
+    job_iter,
+    sig_begin,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
+    from sys import version_info
+    from typing import Any
+
+    if version_info < (3, 11):  # pragma: no cover
+        from typing_extensions import Self
+    else:  # pragma: no cover
+        from typing import Self
+
+    from array import array
+
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
 
 
@@ -62,6 +71,25 @@ class Job(io.BufferedIOBase):
         """Read from stream."""
         with self._read_lock:
             return self._read_unlocked(size)
+
+    def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:
+        """Read from stream into a buffer.
+
+        :param buffer: The buffer to store the read data into
+        :type buffer: Union[bytearray, memoryview, array]
+        :returns: The size of the read data in bytes
+        :rtype: int
+        """
+        if not isinstance(buffer, memoryview):
+            buffer = memoryview(buffer)
+        if buffer.readonly:
+            msg = '"buffer" must be writable'
+            raise ValueError(msg)
+        buffer = buffer.cast("B")
+
+        with self._read_lock:
+            _, length = self._readinto_unlocked(buffer)
+            return length
 
     def close(self: Self) -> None:
         """Close stream."""
