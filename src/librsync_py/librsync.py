@@ -1,17 +1,17 @@
 # Copyright (c) 2024 librsync_py project. Released under AGPL-3.0
 # license. Refer to the LICENSE file for details or visit:
 # https://www.gnu.org/licenses/agpl-3.0.en.html
+"""Librsync stream API."""
 
 from __future__ import annotations
 
 import io
 from sys import version_info
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any
 
-from librsync_py import RsResult, RsSignatureMagic
-from librsync_py._internals.wrappers import (JobStats, free_job, get_job_stats,
-                                             job_iter, sig_begin)
+from librsync_py import RsResult
+from librsync_py._internals.wrappers import JobStats, get_job_stats, job_iter
 
 if version_info < (3, 11):  # pragma: no cover
     from typing_extensions import Self
@@ -19,51 +19,67 @@ else:  # pragma: no cover
     from typing import Self
 
 if TYPE_CHECKING:  # pragma: no cover
-    from types import TracebackType
-
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
 
 
 class Job(io.BufferedIOBase):
+    """Librsync job wrapper."""
+
     def __init__(
-        self, job: CTypesData, raw: io.RawIOBase, buffer_size=io.DEFAULT_BUFFER_SIZE
-    ):
-        """Create a new buffered reader using the given readable raw IO object."""
+        self: Self,
+        job: CTypesData,
+        raw: io.RawIOBase,
+        buffer_size: int = io.DEFAULT_BUFFER_SIZE,
+    ) -> None:
+        """Create librsync job from a readable raw IO object."""
         if not raw.readable():
-            raise OSError('"raw" argument must be readable.')
+            msg = '"raw" argument must be readable.'
+            raise OSError(msg)
 
         self._raw = raw
-        self._job = job
+        self.__job = job
 
         if buffer_size <= 0:
-            raise ValueError("invalid buffer size")
+            msg = "invalid buffer size"
+            raise ValueError(msg)
         self.buffer_size = buffer_size
 
-        self._reset_bufs()
+        self._raw_buf = b""
+        self._buf = bytearray()
         self._read_lock = Lock()
 
     def readable(self: Self) -> bool:
+        """Check if the stream is readeable."""
         return self.raw.readable()
 
     def read(self: Self, size: int | None = -1) -> bytes:
+        """Read from stream."""
         return self._read_unlocked(size)
 
-    def close(self):
+    def close(self: Self) -> None:
+        """Close stream."""
         if self.raw is not None and not self.closed:
             self.raw.close()
 
-    def detach(self):
+    def detach(self: Self) -> io.RawIOBase:
+        """Detach from the underlying stream and return it."""
         if self.raw is None:
-            raise ValueError("raw stream already detached")
+            msg = "raw stream already detached"
+            raise ValueError(msg)
         raw = self._raw
         self._raw = None
         return raw
 
-    def _reset_bufs(self):
-        self._raw_buf = b""
-        self._buf = bytearray()
+    def _read_unlocked(self: Self, size: int | None = -1) -> bytes:
+        """Read from the stream, without thread safety.
 
-    def _read_unlocked(self: Self, size: int | None = -1):
+        :param size: The maximum amount of bytes to read.
+        :type size: Optional[int]
+        :returns: The read data.
+        :rtype: bytes
+        :raises RsCApiError: If something goes wrong during the read.
+        :raises ValueError: If input param validation fails.
+        """
         if size is None:
             size = -1
 
@@ -100,6 +116,15 @@ class Job(io.BufferedIOBase):
         return bytes(out)
 
     def _readinto_unlocked(self: Self, buf: memoryview) -> tuple[RsResult, int]:
+        """Read from the stream into a buffer, without thread safety.
+
+        :param buf: The buffer to store the read data into.
+        :type buf: memoryview
+        :returns: The result of the operation and the bytes written to the buffer.
+        :rtype: tuple[RsResult, int]
+        :raises RsCApiError: If something goes wrong during the read.
+        :raises ValueError: If input param validation fails.
+        """
         out_pos = 0
         out_cap = len(buf)
 
@@ -110,7 +135,7 @@ class Job(io.BufferedIOBase):
 
             with memoryview(self._raw_buf) as ib:
                 result, read, written = job_iter(
-                    self._job,
+                    self.__job,
                     ib,
                     buf[out_pos:],
                     eof=not bool(cap),
@@ -124,33 +149,46 @@ class Job(io.BufferedIOBase):
 
     @property
     def raw(self: Self) -> io.RawIOBase:
+        """Get the underlying raw stream."""
         return self._raw
 
     @property
-    def closed(self):
+    def closed(self: Self) -> bool:
+        """Check if stream is closed."""
         return self.raw.closed
 
     @property
-    def name(self):
+    def name(self: Self) -> str:
+        """Get name."""
         return self.raw.name
 
     @property
-    def mode(self):
+    def mode(self: Self) -> str:
+        """Get mode."""
         return self.raw.mode
 
     @property
     def job_stats(self: Self) -> JobStats:
-        return get_job_stats(self._job)
+        """Get job statistics."""
+        return get_job_stats(self.__job)
 
-    def __getstate__(self):
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
+    def __getstate__(self: Self) -> dict:
+        """Pickle object."""
+        msg = f"cannot pickle {self.__class__.__name__!r} object"
+        raise TypeError(msg)
 
-    def __repr__(self):
+    def __setstate__(self: Self, obj: Any) -> dict:  # noqa: ANN401
+        """Unpickle object."""
+        msg = f"cannot unpickle {self.__class__.__name__!r} object"
+        raise TypeError(msg)
+
+    def __repr__(self: Self) -> str:
+        """Repr the object."""
         modname = self.__class__.__module__
         clsname = self.__class__.__qualname__
         try:
             name = self.name
         except AttributeError:
-            return "<{}.{}>".format(modname, clsname)
+            return f"<{modname}.{clsname}>"
         else:
-            return "<{}.{} name={!r}>".format(modname, clsname, name)
+            return f"<{modname}.{clsname} name={name!r}>"
