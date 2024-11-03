@@ -12,13 +12,20 @@ from typing import TYPE_CHECKING
 from librsync_py import RsResult, RsSignatureMagic
 from librsync_py._internals.wrappers import (
     JobStats,
+    MatchStats,
+    build_hash_table,
+    delta_begin,
     free_job,
+    free_sig,
     get_job_stats,
+    get_match_stats,
     job_iter,
+    loadsig_begin,
     sig_begin,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
+    from array import array
     from sys import version_info
     from typing import Any
 
@@ -26,8 +33,6 @@ if TYPE_CHECKING:  # pragma: no cover
         from typing_extensions import Self
     else:  # pragma: no cover
         from typing import Self
-
-    from array import array
 
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
 
@@ -328,3 +333,152 @@ class Signature(Job):
             raw=raw,
             buffer_size=buffer_size,
         )
+
+
+class Delta(Job):
+    """Generate a new delta.
+
+    Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
+    which can be read to get the delta. Note however, that this object is not
+    seekable.
+
+    :param sig_raw: The source signature stream
+    :type sig_raw: io.RawIOBase
+    :param basis_raw: The source basis stream
+    :type basis_raw: io.RawIOBase
+    :param buffer_size: The size of the cache buffer in bytes. For files above
+    1GB, good values are typically in the range of 1MB-16MB. Experimentation
+    and/or profiling may be needed to achieve optimal results
+    :type buffer_size: int
+    """
+
+    def __init__(
+        self: Self,
+        sig_raw: io.RawIOBase,
+        basis_raw: io.RawIOBase,
+        buffer_size: int = io.DEFAULT_BUFFER_SIZE,
+    ) -> None:
+        """Create the object."""
+        self._raw_sig = sig_raw
+        self.__sig_loaded = False
+        self.__sig, self.__sig_job = loadsig_begin()
+        super().__init__(
+            job=delta_begin(self.__sig),
+            raw=basis_raw,
+            buffer_size=buffer_size,
+        )
+
+    def load_signature(self: Self) -> None:
+        """Load the signature for creating the delta from the signature stream."""
+        if not self.signature_loaded:
+            self._check_signature_closed()
+            with self._read_lock:
+                self._load_signature_unlocked()
+
+    def read(self: Self, size: int | None = -1) -> bytes:  # noqa: D102
+        self._check_signature_loaded()
+        return super().read(size)
+
+    def read1(self: Self, size: int | None = -1) -> bytes:  # noqa: D102
+        self._check_signature_loaded()
+        return super().read1(size)
+
+    def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:  # noqa: D102
+        self._check_signature_loaded()
+        return super().readinto(buffer)
+
+    def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:  # noqa: D102
+        self._check_signature_loaded()
+        return super().readinto1(buffer)
+
+    def close_signature(self: Self) -> None:
+        """Close signature stream."""
+        if self.raw_signature is not None and not self.signature_closed:
+            self.raw_signature.close()
+
+    def detach_signature(self: Self) -> io.RawIOBase:
+        """Detach from the underlying signature stream and return it."""
+        if self.raw_signature is None:
+            msg = "raw_signature stream already detached"
+            raise ValueError(msg)
+        raw_signature = self._raw_sig
+        self._raw_sig = None
+        return raw_signature
+
+    def _load_signature_unlocked(self: Self) -> None:
+        """Load the signature for creating the delta from the signature stream."""
+        if self.__sig_loaded:
+            return
+
+        input_ = b""
+        output = bytearray()  # loading signatures produces no output
+        chunk_size = max(self.buffer_size, 1)
+        result = RsResult.BLOCKED
+        with memoryview(output) as out_mv:
+            while result == RsResult.BLOCKED:
+                input_ += self._raw_sig.read(chunk_size)
+                with memoryview(input_) as in_mv:
+                    result, read, _ = job_iter(
+                        self.__sig_job,
+                        in_mv,
+                        out_mv,
+                        eof=len(in_mv) == 0,
+                    )
+                if read == 0 and len(input_):
+                    msg = (
+                        "Infinite loop detected. "
+                        "Signature load job consumes no input but does not complete."
+                    )
+                    raise RuntimeError(msg)
+                input_ = input_[read:]
+
+        if result == RsResult.DONE:
+            build_hash_table(self.__sig)  # Index the signature
+            self.__sig_loaded = True
+            self.close_signature()
+            if self.__sig_job:
+                free_job(self.__sig_job)
+                self.__sig_job = None
+
+    def _check_signature_loaded(self: Self) -> bool:
+        """Raise ValueError if the signature stream is closed."""
+        if not self.signature_loaded:
+            msg = "Signature not loaded. Did you forget to call `.load_signature()`?"
+            raise ValueError(msg)
+
+    @property
+    def signature_loaded(self: Self) -> bool:
+        """Check the signature has been loaded. True after :meth:`load_signature()` is called."""
+        return self.__sig_loaded
+
+    @property
+    def raw_signature(self: Self) -> io.RawIOBase:
+        """Get the underlying raw signature stream."""
+        return self._raw_sig
+
+    @property
+    def signature_closed(self: Self) -> bool:
+        """Check if signature stream is closed."""
+        return self.raw_signature.closed
+
+    @property
+    def match_stats(self: Self) -> MatchStats:
+        """Get delta match statistics."""
+        return get_match_stats(self.__sig)
+
+    def _check_signature_closed(self: Self) -> None:
+        """Raise a ValueError if signature file is closed."""
+        if self.signature_closed:
+            msg = "I/O operation on closed file."
+            raise ValueError(msg)
+
+    def __del__(self: Self) -> None:
+        """Deallocate the object."""
+        self.close_signature()
+        if self.__sig_job:
+            free_job(self.__sig_job)
+            self.__sig_job = None
+        if self.__sig:
+            free_sig(self.__sig)
+            self.__sig = None
+        return super().__del__()
