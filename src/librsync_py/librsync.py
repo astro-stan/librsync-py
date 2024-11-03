@@ -136,6 +136,7 @@ class Job(io.BufferedIOBase):
 
     def close(self: Self) -> None:
         """Close stream."""
+        self._free_c_api_resources()
         if self.raw is not None and not self.closed:
             self.raw.close()
 
@@ -393,6 +394,7 @@ class Delta(Job):
         if not self.signature_loaded:
             self._check_signature_closed()
             self._check_signature_job_c_api_freed()
+            self._check_signature_c_api_freed()
             with self._read_lock:
                 self._load_signature_unlocked()
 
@@ -416,8 +418,13 @@ class Delta(Job):
         self._free_signature_c_api_resources()
         return super().detach()
 
+    def close(self: Self) -> None:  # noqa: D102
+        self._free_signature_c_api_resources()
+        return super().close()
+
     def close_signature(self: Self) -> None:
         """Close signature stream."""
+        self._free_signature_job_c_api_resources()
         if self.raw_signature is not None and not self.signature_closed:
             self.raw_signature.close()
 
