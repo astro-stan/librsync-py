@@ -18,7 +18,7 @@ def signature(  # noqa: PLR0913
     sig_type: RsSignatureMagic = RsSignatureMagic.RK_BLAKE2_SIG,
     block_length: int = 0,
     hash_length: int = 0,
-) -> io.RawIOBase:
+) -> bytes:
     """Generate a new signature.
 
     :param basis: The source file-like object
@@ -38,7 +38,7 @@ def signature(  # noqa: PLR0913
     hash collisions. Use `0` for maximum or `-1` for minimum.
     :type hash_length: int
     :returns: The generated signature
-    :rtype: io.RawIOBase
+    :rtype: bytes
     """
     return Signature(
         raw=basis,
@@ -54,7 +54,7 @@ def delta(
     signature: io.RawIOBase,
     basis: io.RawIOBase,
     chunk_size: int = io.DEFAULT_BUFFER_SIZE,
-) -> io.RawIOBase:
+) -> bytes:
     """Generate a new delta.
 
     :param signature: The signature file-like object
@@ -66,7 +66,7 @@ def delta(
     and/or profiling may be needed to achieve optimal results
     :type chunk_size: int
     :returns: The generated delta
-    :rtype: io.RawIOBase
+    :rtype: bytes
     """
     d = Delta(sig_raw=signature, basis_raw=basis, buffer_size=chunk_size)
     d.load_signature()
@@ -77,7 +77,7 @@ def patch(
     basis: io.RawIOBase,
     delta: io.RawIOBase,
     chunk_size: int = io.DEFAULT_BUFFER_SIZE,
-) -> io.RawIOBase:
+) -> bytes:
     """Patch a file-like object.
 
     :param basis: The source file-like object
@@ -89,7 +89,7 @@ def patch(
     and/or profiling may be needed to achieve optimal results
     :type chunk_size: int
     :returns: The patched file-like object
-    :rtype: io.RawIOBase
+    :rtype: bytes
     """
     return Patch(
         basis_raw=basis,
