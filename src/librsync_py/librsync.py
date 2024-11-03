@@ -69,23 +69,26 @@ class Job(io.BufferedIOBase):
         self._buf = bytearray()
         self._read_lock = Lock()
 
-        # Ensure proper deallication happens when interpreter is shutting down
+        # Ensure proper deallocation happens when interpreter is shutting down
         weakref.finalize(self, self.__del__)
 
     def readable(self: Self) -> bool:
-        """Check if the stream is readeable."""
+        """Check if the stream is readable."""
         self._checkClosed()
+        self._check_c_api_freed()
         return self.raw.readable()
 
     def read(self: Self, size: int | None = -1) -> bytes:
         """Read up to size bytes."""
         self._checkClosed()
+        self._check_c_api_freed()
         with self._read_lock:
             return self._read_unlocked(size, read1=False)
 
     def read1(self: Self, size: int | None = -1) -> bytes:
         """Read up to size bytes while performing at most 1 read() system call."""
         self._checkClosed()
+        self._check_c_api_freed()
         with self._read_lock:
             return self._read_unlocked(size, read1=True)
 
@@ -98,6 +101,7 @@ class Job(io.BufferedIOBase):
         :rtype: int
         """
         self._checkClosed()
+        self._check_c_api_freed()
         if not isinstance(buffer, memoryview):
             buffer = memoryview(buffer)
         if buffer.readonly:
@@ -118,6 +122,7 @@ class Job(io.BufferedIOBase):
         :rtype: int
         """
         self._checkClosed()
+        self._check_c_api_freed()
         if not isinstance(buffer, memoryview):
             buffer = memoryview(buffer)
         if buffer.readonly:
@@ -141,6 +146,7 @@ class Job(io.BufferedIOBase):
             raise ValueError(msg)
         raw = self._raw
         self._raw = None
+        self._free_c_api_resources()
         return raw
 
     def _read_unlocked(
@@ -237,6 +243,18 @@ class Job(io.BufferedIOBase):
 
         return result, out_pos
 
+    def _free_c_api_resources(self: Self) -> None:
+        """Deallocate C API resources."""
+        if self.__job:
+            free_job(self.__job)
+            self.__job = None
+
+    def _check_c_api_freed(self: Self) -> None:
+        """Raise ValueError if the C API resources have been freed."""
+        if not self.__job:
+            msg = "I/O operation on a freed librsync job"
+            raise ValueError(msg)
+
     @property
     def raw(self: Self) -> io.RawIOBase:
         """Get the underlying raw stream."""
@@ -265,9 +283,7 @@ class Job(io.BufferedIOBase):
     def __del__(self) -> None:
         """Deallocate the object."""
         self.close()
-        if self.__job:
-            free_job(self.__job)
-            self.__job = None
+        self._free_c_api_resources()
         return super().__del__()
 
     def __getstate__(self: Self) -> dict:
@@ -376,6 +392,7 @@ class Delta(Job):
         """Load the signature for creating the delta from the signature stream."""
         if not self.signature_loaded:
             self._check_signature_closed()
+            self._check_signature_job_c_api_freed()
             with self._read_lock:
                 self._load_signature_unlocked()
 
@@ -395,6 +412,10 @@ class Delta(Job):
         self._check_signature_loaded()
         return super().readinto1(buffer)
 
+    def detach(self: Self) -> io.RawIOBase:  # noqa: D102
+        self._free_signature_c_api_resources()
+        return super().detach()
+
     def close_signature(self: Self) -> None:
         """Close signature stream."""
         if self.raw_signature is not None and not self.signature_closed:
@@ -407,6 +428,7 @@ class Delta(Job):
             raise ValueError(msg)
         raw_signature = self._raw_sig
         self._raw_sig = None
+        self._free_signature_job_c_api_resources()
         return raw_signature
 
     def _load_signature_unlocked(self: Self) -> None:
@@ -440,15 +462,14 @@ class Delta(Job):
             build_hash_table(self.__sig)  # Index the signature
             self.__sig_loaded = True
             self.close_signature()
-            if self.__sig_job:
-                free_job(self.__sig_job)
-                self.__sig_job = None
+            self._free_signature_job_c_api_resources()
 
     def _check_signature_loaded(self: Self) -> bool:
         """Raise ValueError if the signature stream is closed."""
         if not self.signature_loaded:
             msg = "Signature not loaded. Did you forget to call `.load_signature()`?"
             raise ValueError(msg)
+        self._check_signature_c_api_freed()
 
     @property
     def signature_loaded(self: Self) -> bool:
@@ -476,13 +497,33 @@ class Delta(Job):
             msg = "I/O operation on closed file."
             raise ValueError(msg)
 
-    def __del__(self: Self) -> None:
-        """Deallocate the object."""
-        self.close_signature()
-        if self.__sig_job:
-            free_job(self.__sig_job)
-            self.__sig_job = None
+    def _free_signature_c_api_resources(self: Self) -> None:
+        """Deallocate signature C API resources."""
         if self.__sig:
             free_sig(self.__sig)
             self.__sig = None
+
+    def _free_signature_job_c_api_resources(self: Self) -> None:
+        """Deallocate signature job C API resources."""
+        if self.__sig_job:
+            free_job(self.__sig_job)
+            self.__sig_job = None
+
+    def _check_signature_c_api_freed(self: Self) -> None:
+        """Raise ValueError if the signature C API resources have been freed."""
+        if not self.__sig:
+            msg = "I/O operation on a freed librsync signature"
+            raise ValueError(msg)
+
+    def _check_signature_job_c_api_freed(self: Self) -> None:
+        """Raise ValueError if the signature job C API resources have been freed."""
+        if not self.__sig_job:
+            msg = "I/O operation on a freed librsync job"
+            raise ValueError(msg)
+
+    def __del__(self: Self) -> None:
+        """Deallocate the object."""
+        self.close_signature()
+        self._free_signature_c_api_resources()
+        self._free_signature_job_c_api_resources()
         return super().__del__()
