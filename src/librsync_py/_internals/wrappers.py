@@ -197,9 +197,7 @@ class MatchStats:
     @property
     def hashcmp_ratio(self) -> float:
         """The ratio of hash to total compares done."""
-        if not (self.hashcmp_count and self.find_count):
-            return 1.0
-        return float(self.hashcmp_count / self.find_count)
+        return float(self.hashcmp_count / (self.find_count or 1))
 
     @property
     def weaksumcmp_ratio(self) -> float:
@@ -209,9 +207,7 @@ class MatchStats:
     @property
     def entrycmp_ratio(self) -> float:
         """The ratio of entry to total compares done."""
-        if not (self.entrycmp_count and self.find_count):
-            return 1.0
-        return float(self.entrycmp_count / self.find_count)
+        return float(self.entrycmp_count / (self.find_count or 1))
 
     @property
     def strongsumcmp_ratio(self) -> float:
@@ -225,16 +221,12 @@ class MatchStats:
         For signatures with equal block and hash lengths, higher match ratio
         results in smaller delta file sizes.
         """
-        if not (self.match_count and self.find_count):
-            return 1.0
-        return float(self.match_count / self.find_count)
+        return float(self.match_count / (self.find_count or 1))
 
     @property
     def strongsum_calc_ratio(self) -> float:
         """The ratio of strong sum to total calculations done."""
-        if not (self.strongsum_calc_count and self.find_count):
-            return 1.0
-        return float(self.strongsum_calc_count / self.find_count)
+        return float(self.strongsum_calc_count / (self.find_count or 1))
 
 
 @dataclass
