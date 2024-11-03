@@ -853,7 +853,7 @@ def delta_begin(sig_pp: CTypesData) -> CTypesData:
     return _lib.rs_delta_begin(sig_pp[0])
 
 
-def get_delta_stats(sig_pp: CTypesData) -> MatchStats:
+def get_match_stats(sig_pp: CTypesData) -> MatchStats:
     """Get delta file generation statistics.
 
     :param sig_pp: The signature handle
