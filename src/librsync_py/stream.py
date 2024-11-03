@@ -10,10 +10,11 @@ import weakref
 from threading import RLock
 from typing import TYPE_CHECKING
 
-from librsync_py import RsResult, RsSignatureMagic
+from librsync_py import RsSignatureMagic
 from librsync_py._internals.wrappers import (
     JobStats,
     MatchStats,
+    RsResult,
     build_hash_table,
     delta_begin,
     free_job,
