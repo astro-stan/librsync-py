@@ -42,9 +42,21 @@ if TYPE_CHECKING:  # pragma: no cover
 class _Job(io.BufferedIOBase):
     """Librsync job wrapper.
 
-    Accepts a librsync job, allocated with `sig_begin`, `loadsig_begin`,
-    `delta_begin` or `patch_begin`. The job will be automatically deallocated
-    with `free_job` when this object is garbage collected.
+    Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
+    which can be read to get the processed data. Note however, that in contrast
+    to `io.BufferedReader`, this object is not seekable.
+
+    :param job: A librsync job primitive, created with `sig_begin`,
+    `loadsig_begin`, `delta_begin` or `patch_begin`. Its lifecycle will be
+    managed by this object. When it is GC-ed, or when the raw stream has
+    been closed or detached, the primitive will be freed with :meth:`free_job`
+    :type job: CTypesData
+    :param raw: The raw data stream
+    :type raw: io.RawIOBase
+    :param buffer_size: The size of the buffer (i.e the chunk size) in bytes.
+    For files above 1GB, good values are typically in the range of 1MB-16MB.
+    Experimentation and/or profiling may be needed to achieve optimal results
+    :type buffer_size: int
     """
 
     def __init__(
@@ -53,54 +65,82 @@ class _Job(io.BufferedIOBase):
         raw: io.RawIOBase,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
-        """Create librsync job from a readable raw IO object."""
+        """Create the object."""
         if not raw.readable():
             msg = '"raw" argument must be readable.'
             raise OSError(msg)
-
-        self._raw = raw
-        self.__job = job
 
         if buffer_size <= 0:
             msg = "invalid buffer size"
             raise ValueError(msg)
         self.buffer_size = buffer_size
 
-        self._raw_buf = b""
-        self._buf = bytearray()
         self._rlock = RLock()
+        self._raw = raw
+        self.__job = job
+
+        # Used to collect leftover unproceesed data read from the raw stream
+        self._raw_buf = b""
+        # Used to collect processed data
+        self._buf = bytearray()
 
         # Ensure proper deallocation happens when interpreter is shutting down
         weakref.finalize(self, self.__del__)
 
     def readable(self: Self) -> bool:
-        """Check if the stream is readable."""
+        """Check if the stream is readable.
+
+        :raises ValueError: If reader is closed or in invalid state
+        """
         with self._rlock:
             self._checkClosed()
             self._check_c_api_freed()
             return self.raw.readable()
 
     def read(self: Self, size: int | None = -1) -> bytes:
-        """Read up to size bytes."""
+        """Process and read up to size bytes.
+
+        :param size: The max amount of bytes to read. Use -1 to read until EOF
+        :type size: Optional[int]
+        :returns: The read bytes. Can be lower than requested
+        :rtype: bytes
+        :raises RsCApiError: If something goes wrong during the read
+        :raises ValueError: If input param validation fails or reader is closed
+        or in invalid state
+        """
         with self._rlock:
             self._checkClosed()
             self._check_c_api_freed()
             return self._read(size, read1=False)
 
     def read1(self: Self, size: int | None = -1) -> bytes:
-        """Read up to size bytes while performing at most 1 read() system call."""
+        """Process and read up to size bytes while performing at most 1 read() system call.
+
+        :param size: The max amount of bytes to read. Use -1 to read until EOF
+        or 1 buffer size length (whichever is lower)
+        :type size: Optional[int]
+        :returns: The read bytes. Can be lower than requested
+        :rtype: bytes
+        :raises RsCApiError: If something goes wrong during the read
+        :raises ValueError: If input param validation fails or reader is closed
+        or in invalid state
+        """
         with self._rlock:
             self._checkClosed()
             self._check_c_api_freed()
             return self._read(size, read1=True)
 
     def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:
-        """Read up to size bytes into a buffer.
+        """Process and read up to size bytes into a buffer.
 
         :param buffer: The buffer to store the read data into
         :type buffer: Union[bytearray, memoryview, array]
-        :returns: The size of the read data in bytes
+        :returns: The size of the read data in bytes. May be smaller than the
+        buffer length
         :rtype: int
+        :raises RsCApiError: If something goes wrong during the read
+        :raises ValueError: If input param validation fails or reader is closed
+        or in invalid state
         """
         with self._rlock:
             self._checkClosed()
@@ -116,12 +156,16 @@ class _Job(io.BufferedIOBase):
             return length
 
     def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:
-        """Read up to size bytes into a buffer while performing at most 1 read() system call.
+        """Process and read up to size bytes into a buffer while performing at most 1 read() system call.
 
         :param buffer: The buffer to store the read data into
         :type buffer: Union[bytearray, memoryview, array]
-        :returns: The size of the read data in bytes
+        :returns: The size of the read data in bytes. May be smaller than the
+        buffer length
         :rtype: int
+        :raises RsCApiError: If something goes wrong during the read
+        :raises ValueError: If input param validation fails or reader is closed
+        or in invalid state
         """
         with self._rlock:
             self._checkClosed()
@@ -137,14 +181,21 @@ class _Job(io.BufferedIOBase):
             return length
 
     def close(self: Self) -> None:
-        """Close stream."""
+        """Close the stream.
+
+        :raises ValueError: If reader is closed or in invalid state
+        """
         with self._rlock:
             self._free_c_api_resources()
             if self.raw is not None and not self.closed:
                 self.raw.close()
 
     def detach(self: Self) -> io.RawIOBase:
-        """Detach from the underlying stream and return it."""
+        """Detach from the underlying stream and return it.
+
+        :raises ValueError: If the reader is in an invalid state or already
+        detached.
+        """
         with self._rlock:
             if self.raw is None:
                 msg = "raw stream already detached"
@@ -160,16 +211,16 @@ class _Job(io.BufferedIOBase):
         *,
         read1: bool = False,
     ) -> bytes:
-        """Read from the stream, without thread safety.
+        """Process and read up to size bytes from the stream.
 
-        :param size: The maximum amount of bytes to read.
+        :param size: The max amount of bytes to read. Use -1 to read until EOF
         :type size: Optional[int]
-        :returns: The read data.
-        :rtype: bytes
         :param read1: Perform at most 1 read() system call.
         :type read1: bool
-        :raises RsCApiError: If something goes wrong during the read.
-        :raises ValueError: If input param validation fails.
+        :returns: The read data
+        :rtype: bytes
+        :raises RsCApiError: If something goes wrong during the read
+        :raises ValueError: If input param validation fails
         """
         if size is None:
             size = -1
@@ -177,19 +228,21 @@ class _Job(io.BufferedIOBase):
         if size == 0:
             return b""
 
+        # Fast route - return processed and cached data from the buffer
         if len(self._buf) >= size and size >= 0:
             out = self._buf[:size]
             self._buf = self._buf[size:]
             return bytes(out)
 
+        # Slow route - read data from the stream and process it
         chunks = [self._buf]
         total_length = len(self._buf)
 
         chunk_size = max(self.buffer_size, size)
-        c_buffer = bytearray(chunk_size)
+        chunk_buffer = bytearray(chunk_size)  # Chunk output buffer
 
         result = RsResult.BLOCKED
-        with memoryview(c_buffer) as mv:
+        with memoryview(chunk_buffer) as mv:
             while result == RsResult.BLOCKED:
                 result, written = self._readinto(mv, read1=read1)
                 chunks.append(mv[:written].tobytes())
@@ -197,11 +250,13 @@ class _Job(io.BufferedIOBase):
                 if (total_length >= size and size >= 0) or read1:
                     break
 
+        # Join all chunks at once
         self._buf = bytearray().join(chunks)
 
         if size < 0:
             size = len(self._buf)
 
+        # Take data from the buffer and return it
         out = self._buf[:size]
         self._buf = self._buf[size:]
         return bytes(out)
@@ -212,16 +267,16 @@ class _Job(io.BufferedIOBase):
         *,
         read1: bool = False,
     ) -> tuple[RsResult, int]:
-        """Read from the stream into a buffer, without thread safety.
+        """Process and read from the stream into a buffer.
 
-        :param buf: The buffer to store the read data into.
+        :param buf: The buffer to store the read data into
         :type buf: memoryview
-        :returns: The result of the operation and the bytes written to the buffer.
-        :rtype: tuple[RsResult, int]
-        :param read1: Perform at most 1 read() system call.
+        :param read1: True to perform at most 1 read() system call
         :type read1: bool
-        :raises RsCApiError: If something goes wrong during the read.
-        :raises ValueError: If input param validation fails.
+        :returns: The result of the operation and the bytes written to the buffer
+        :rtype: tuple[RsResult, int]
+        :raises RsCApiError: If something goes wrong during the read
+        :raises ValueError: If input param validation fails
         """
         out_pos = 0
         out_cap = len(buf)
@@ -324,8 +379,8 @@ class Signature(_Job):
     """Generate a new signature.
 
     Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
-    which can be read to get the signature data. Note however, that this
-    object is not seekable.
+    which can be read to get the signature data. Note however, that in contrast
+    to `io.BufferedReader`, this object is not seekable.
 
     :param raw: The source stream
     :type raw: io.RawIOBase
@@ -371,8 +426,8 @@ class Delta(_Job):
     """Generate a new delta.
 
     Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
-    which can be read to get the delta. Note however, that this object is not
-    seekable.
+    which can be read to get the delta. Note however, that in contrast
+    to `io.BufferedReader`, this object is not seekable.
 
     :param sig_raw: The source signature stream
     :type sig_raw: io.RawIOBase
@@ -413,6 +468,7 @@ class Delta(_Job):
         :type size: Optional[int]
         :returns: The amount of bytes loaded
         :rtype: int
+        :raises ValueError: If the reader is closed or in an invalid state
         """
         with self._rlock:
             if not self.signature_loaded:
@@ -434,6 +490,7 @@ class Delta(_Job):
         :type size: Optional[int]
         :returns: The amount of bytes loaded
         :rtype: int
+        :raises ValueError: If the reader is closed or in an invalid state
         """
         with self._rlock:
             if not self.signature_loaded:
@@ -481,7 +538,11 @@ class Delta(_Job):
                 self.raw_signature.close()
 
     def detach_signature(self: Self) -> io.RawIOBase:
-        """Detach from the underlying signature stream and return it."""
+        """Detach from the underlying signature stream and return it.
+
+        :raises ValueError: If the reader is in an invalid state or already
+        detached.
+        """
         with self._rlock:
             if self.raw_signature is None:
                 msg = "raw_signature stream already detached"
@@ -491,7 +552,12 @@ class Delta(_Job):
             self._free_signature_job_c_api_resources()
             return raw_signature
 
-    def _load_signature(self: Self, size: int | None, *, load1: bool = False) -> int:
+    def _load_signature(
+        self: Self,
+        size: int | None,
+        *,
+        load1: bool = False,
+    ) -> int:
         """Load the signature for creating the delta from the signature stream.
 
         When the signature is fully loaded, this function will start returning
@@ -525,6 +591,7 @@ class Delta(_Job):
                     self._sig_buf += self._raw_sig.read(
                         max(self.buffer_size, chunk_size) - len(self._sig_buf)
                     )
+
                 with memoryview(self._sig_buf) as in_mv:
                     result, read, _ = job_iter(
                         self.__sig_job,
@@ -532,12 +599,15 @@ class Delta(_Job):
                         out_mv,
                         eof=len(in_mv) == 0,
                     )
+
                 if read == 0 and len(self._sig_buf):
+                    # No data was consimed but there is data in the buffer
                     msg = (
-                        "Infinite loop detected. "
-                        "Signature load job consumes no input but does not complete."
+                        "Infinite loop detected. Signature load job consumed "
+                        "no input and did not complete."
                     )
                     raise RuntimeError(msg)
+
                 self._sig_buf = self._sig_buf[read:]
                 total_read += read
                 if (size > -1 and total_read >= size) or load1:
@@ -626,8 +696,8 @@ class Patch(_Job):
     """Patch a file-like object.
 
     Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
-    which can be read to get the patched contents. Note however, that this
-    object is not seekable.
+    which can be read to get the patched contents. Note however, that in contrast
+    to `io.BufferedReader`, this object is not seekable.
 
     :param basis_raw: The source basis stream
     :type basis_raw: io.RawIOBase
@@ -654,7 +724,11 @@ class Patch(_Job):
         )
 
     def detach_basis(self: Self) -> io.RawIOBase:
-        """Detach from the underlying basis stream and return it."""
+        """Detach from the underlying basis stream and return it.
+
+        :raises ValueError: If the reader is in an invalid state or already
+        detached.
+        """
         with self._rlock:
             if self.raw_basis is None:
                 msg = "raw_basis stream already detached"
