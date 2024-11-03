@@ -393,6 +393,7 @@ class Delta(Job):
         """Create the object."""
         self._raw_sig = sig_raw
         self.__sig_loaded = False
+        self._sig_buf = b""
         self.__sig, self.__sig_job = loadsig_begin()
         super().__init__(
             job=delta_begin(self.__sig),
@@ -400,14 +401,47 @@ class Delta(Job):
             buffer_size=buffer_size,
         )
 
-    def load_signature(self: Self) -> None:
-        """Load the signature for creating the delta from the signature stream."""
+    def load_signature(self: Self, size: int | None = -1) -> int:
+        """Load the signature for creating the delta from the signature stream.
+
+        When the signature is fully loaded, this function will start returning
+        zeroes regardless of the size argument value and :meth:`signature_loaded`
+        will start returning True.
+
+        :param size: The maximum number of bytes to load from the stream. Use -1
+        for reading until EOF.
+        :type size: Optional[int]
+        :returns: The amount of bytes loaded
+        :rtype: int
+        """
         with self._rlock:
             if not self.signature_loaded:
                 self._check_signature_closed()
                 self._check_signature_job_c_api_freed()
                 self._check_signature_c_api_freed()
-                self._load_signature_unlocked()
+                return self._load_signature(size, load1=False)
+            return 0
+
+    def load_signature1(self: Self, size: int | None = -1) -> int:
+        """Load the signature for creating the delta from the signature stream but perform at most 1 read() system call.
+
+        When the signature is fully loaded, this function will start returning
+        zeroes regardless of the size argument value and :meth:`signature_loaded`
+        will start returning True.
+
+        :param size: The maximum number of bytes to load from the stream. Use -1
+        for reading until EOF or 1 buffer size (whichever is lower)
+        :type size: Optional[int]
+        :returns: The amount of bytes loaded
+        :rtype: int
+        """
+        with self._rlock:
+            if not self.signature_loaded:
+                self._check_signature_closed()
+                self._check_signature_job_c_api_freed()
+                self._check_signature_c_api_freed()
+                return self._load_signature(size, load1=True)
+            return 0
 
     def read(self: Self, size: int | None = -1) -> bytes:  # noqa: D102
         with self._rlock:
@@ -457,38 +491,65 @@ class Delta(Job):
             self._free_signature_job_c_api_resources()
             return raw_signature
 
-    def _load_signature_unlocked(self: Self) -> None:
-        """Load the signature for creating the delta from the signature stream."""
-        if self.__sig_loaded:
-            return
+    def _load_signature(self: Self, size: int | None, *, load1: bool = False) -> int:
+        """Load the signature for creating the delta from the signature stream.
 
-        input_ = b""
+        When the signature is fully loaded, this function will start returning
+        zeroes regardless of the size argument value and :meth:`signature_loaded`
+        will start returning True.
+
+        :param size: The maximum number of bytes to load from the stream.
+        :type size: Optional[int]
+        :param load1: If True - perform at most 1 read() system call. This will
+        cap the max read size to 1 buffer size.
+        :type load1: bool
+        :returns: The amount of bytes loaded.
+        :rtype: int
+        """
+        if self.__sig_loaded:
+            return 0
+
+        if size is None:
+            size = -1
+
+        chunk_size = max(size, self.buffer_size)
+        if chunk_size < 1:
+            return 0
+
         output = bytearray()  # loading signatures produces no output
-        chunk_size = max(self.buffer_size, 1)
         result = RsResult.BLOCKED
+        total_read = 0
         with memoryview(output) as out_mv:
             while result == RsResult.BLOCKED:
-                input_ += self._raw_sig.read(chunk_size)
-                with memoryview(input_) as in_mv:
+                if len(self._sig_buf) < max(self.buffer_size, chunk_size):
+                    self._sig_buf += self._raw_sig.read(
+                        max(self.buffer_size, chunk_size) - len(self._sig_buf)
+                    )
+                with memoryview(self._sig_buf) as in_mv:
                     result, read, _ = job_iter(
                         self.__sig_job,
-                        in_mv,
+                        in_mv[: size if size > 0 else len(self._sig_buf)],
                         out_mv,
                         eof=len(in_mv) == 0,
                     )
-                if read == 0 and len(input_):
+                if read == 0 and len(self._sig_buf):
                     msg = (
                         "Infinite loop detected. "
                         "Signature load job consumes no input but does not complete."
                     )
                     raise RuntimeError(msg)
-                input_ = input_[read:]
+                self._sig_buf = self._sig_buf[read:]
+                total_read += read
+                if (size > -1 and total_read >= size) or load1:
+                    break
 
         if result == RsResult.DONE:
             build_hash_table(self.__sig)  # Index the signature
             self.__sig_loaded = True
             self.close_signature()
             self._free_signature_job_c_api_resources()
+
+        return total_read
 
     def _check_signature_loaded(self: Self) -> bool:
         """Raise ValueError if the signature stream is closed."""
