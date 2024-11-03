@@ -10,11 +10,11 @@ import weakref
 from threading import RLock
 from typing import TYPE_CHECKING
 
+from ._internals import RsSignatureMagic
 from ._internals.wrappers import (
     JobStats,
     MatchStats,
     RsResult,
-    RsSignatureMagic,
     build_hash_table,
     delta_begin,
     free_job,
