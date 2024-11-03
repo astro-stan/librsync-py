@@ -925,3 +925,9 @@ def get_job_stats(job_p: CTypesData) -> JobStats:
             else None
         ),
     )
+
+
+def get_lib_version_str() -> str:
+    """Get libitc version string."""
+    version = cast(bytes, _ffi.buffer(_lib.rs_librsync_version, 20)[:])
+    return version[: version.index(b"\x00")].decode()
