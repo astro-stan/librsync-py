@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import io
+import weakref
 from threading import Lock
 from typing import TYPE_CHECKING
 
@@ -67,6 +68,9 @@ class Job(io.BufferedIOBase):
         self._raw_buf = b""
         self._buf = bytearray()
         self._read_lock = Lock()
+
+        # Ensure proper deallication happens when interpreter is shutting down
+        weakref.finalize(self, self.__del__)
 
     def readable(self: Self) -> bool:
         """Check if the stream is readeable."""
