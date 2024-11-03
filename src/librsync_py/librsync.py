@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import io
 import weakref
-from threading import Lock
+from threading import RLock
 from typing import TYPE_CHECKING
 
 from librsync_py import RsResult, RsSignatureMagic
@@ -68,30 +68,31 @@ class Job(io.BufferedIOBase):
 
         self._raw_buf = b""
         self._buf = bytearray()
-        self._read_lock = Lock()
+        self._rlock = RLock()
 
         # Ensure proper deallocation happens when interpreter is shutting down
         weakref.finalize(self, self.__del__)
 
     def readable(self: Self) -> bool:
         """Check if the stream is readable."""
-        self._checkClosed()
-        self._check_c_api_freed()
-        return self.raw.readable()
+        with self._rlock:
+            self._checkClosed()
+            self._check_c_api_freed()
+            return self.raw.readable()
 
     def read(self: Self, size: int | None = -1) -> bytes:
         """Read up to size bytes."""
-        self._checkClosed()
-        self._check_c_api_freed()
-        with self._read_lock:
-            return self._read_unlocked(size, read1=False)
+        with self._rlock:
+            self._checkClosed()
+            self._check_c_api_freed()
+            return self._read(size, read1=False)
 
     def read1(self: Self, size: int | None = -1) -> bytes:
         """Read up to size bytes while performing at most 1 read() system call."""
-        self._checkClosed()
-        self._check_c_api_freed()
-        with self._read_lock:
-            return self._read_unlocked(size, read1=True)
+        with self._rlock:
+            self._checkClosed()
+            self._check_c_api_freed()
+            return self._read(size, read1=True)
 
     def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:
         """Read up to size bytes into a buffer.
@@ -101,17 +102,17 @@ class Job(io.BufferedIOBase):
         :returns: The size of the read data in bytes
         :rtype: int
         """
-        self._checkClosed()
-        self._check_c_api_freed()
-        if not isinstance(buffer, memoryview):
-            buffer = memoryview(buffer)
-        if buffer.readonly:
-            msg = '"buffer" must be writable'
-            raise ValueError(msg)
-        buffer = buffer.cast("B")
+        with self._rlock:
+            self._checkClosed()
+            self._check_c_api_freed()
+            if not isinstance(buffer, memoryview):
+                buffer = memoryview(buffer)
+            if buffer.readonly:
+                msg = '"buffer" must be writable'
+                raise ValueError(msg)
+            buffer = buffer.cast("B")
 
-        with self._read_lock:
-            _, length = self._readinto_unlocked(buffer, read1=False)
+            _, length = self._readinto(buffer, read1=False)
             return length
 
     def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:
@@ -122,36 +123,38 @@ class Job(io.BufferedIOBase):
         :returns: The size of the read data in bytes
         :rtype: int
         """
-        self._checkClosed()
-        self._check_c_api_freed()
-        if not isinstance(buffer, memoryview):
-            buffer = memoryview(buffer)
-        if buffer.readonly:
-            msg = '"buffer" must be writable'
-            raise ValueError(msg)
-        buffer = buffer.cast("B")
+        with self._rlock:
+            self._checkClosed()
+            self._check_c_api_freed()
+            if not isinstance(buffer, memoryview):
+                buffer = memoryview(buffer)
+            if buffer.readonly:
+                msg = '"buffer" must be writable'
+                raise ValueError(msg)
+            buffer = buffer.cast("B")
 
-        with self._read_lock:
-            _, length = self._readinto_unlocked(buffer, read1=True)
+            _, length = self._readinto(buffer, read1=True)
             return length
 
     def close(self: Self) -> None:
         """Close stream."""
-        self._free_c_api_resources()
-        if self.raw is not None and not self.closed:
-            self.raw.close()
+        with self._rlock:
+            self._free_c_api_resources()
+            if self.raw is not None and not self.closed:
+                self.raw.close()
 
     def detach(self: Self) -> io.RawIOBase:
         """Detach from the underlying stream and return it."""
-        if self.raw is None:
-            msg = "raw stream already detached"
-            raise ValueError(msg)
-        raw = self._raw
-        self._raw = None
-        self._free_c_api_resources()
-        return raw
+        with self._rlock:
+            if self.raw is None:
+                msg = "raw stream already detached"
+                raise ValueError(msg)
+            raw = self._raw
+            self._raw = None
+            self._free_c_api_resources()
+            return raw
 
-    def _read_unlocked(
+    def _read(
         self: Self,
         size: int | None = -1,
         *,
@@ -188,7 +191,7 @@ class Job(io.BufferedIOBase):
         result = RsResult.BLOCKED
         with memoryview(c_buffer) as mv:
             while result == RsResult.BLOCKED:
-                result, written = self._readinto_unlocked(mv, read1=read1)
+                result, written = self._readinto(mv, read1=read1)
                 chunks.append(mv[:written].tobytes())
                 total_length += written
                 if (total_length >= size and size >= 0) or read1:
@@ -203,7 +206,7 @@ class Job(io.BufferedIOBase):
         self._buf = self._buf[size:]
         return bytes(out)
 
-    def _readinto_unlocked(
+    def _readinto(
         self: Self,
         buf: memoryview,
         *,
@@ -260,33 +263,39 @@ class Job(io.BufferedIOBase):
     @property
     def raw(self: Self) -> io.RawIOBase:
         """Get the underlying raw stream."""
-        return self._raw
+        with self._rlock:
+            return self._raw
 
     @property
     def closed(self: Self) -> bool:
         """Check if stream is closed."""
-        return self.raw.closed
+        with self._rlock:
+            return self.raw.closed
 
     @property
     def name(self: Self) -> str:
         """Get name."""
-        return self.raw.name
+        with self._rlock:
+            return self.raw.name
 
     @property
     def mode(self: Self) -> str:
         """Get mode."""
-        return self.raw.mode
+        with self._rlock:
+            return self.raw.mode
 
     @property
     def job_stats(self: Self) -> JobStats:
         """Get job statistics."""
-        return get_job_stats(self.__job)
+        with self._rlock:
+            return get_job_stats(self.__job)
 
     def __del__(self) -> None:
         """Deallocate the object."""
-        self.close()
-        self._free_c_api_resources()
-        return super().__del__()
+        with self._rlock:
+            self.close()
+            self._free_c_api_resources()
+            return super().__del__()
 
     def __getstate__(self: Self) -> dict:
         """Pickle object."""
@@ -392,52 +401,60 @@ class Delta(Job):
 
     def load_signature(self: Self) -> None:
         """Load the signature for creating the delta from the signature stream."""
-        if not self.signature_loaded:
-            self._check_signature_closed()
-            self._check_signature_job_c_api_freed()
-            self._check_signature_c_api_freed()
-            with self._read_lock:
+        with self._rlock:
+            if not self.signature_loaded:
+                self._check_signature_closed()
+                self._check_signature_job_c_api_freed()
+                self._check_signature_c_api_freed()
                 self._load_signature_unlocked()
 
     def read(self: Self, size: int | None = -1) -> bytes:  # noqa: D102
-        self._check_signature_loaded()
-        return super().read(size)
+        with self._rlock:
+            self._check_signature_loaded()
+            return super().read(size)
 
     def read1(self: Self, size: int | None = -1) -> bytes:  # noqa: D102
-        self._check_signature_loaded()
-        return super().read1(size)
+        with self._rlock:
+            self._check_signature_loaded()
+            return super().read1(size)
 
     def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:  # noqa: D102
-        self._check_signature_loaded()
-        return super().readinto(buffer)
+        with self._rlock:
+            self._check_signature_loaded()
+            return super().readinto(buffer)
 
     def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:  # noqa: D102
-        self._check_signature_loaded()
-        return super().readinto1(buffer)
+        with self._rlock:
+            self._check_signature_loaded()
+            return super().readinto1(buffer)
 
     def detach(self: Self) -> io.RawIOBase:  # noqa: D102
-        self._free_signature_c_api_resources()
-        return super().detach()
+        with self._rlock:
+            self._free_signature_c_api_resources()
+            return super().detach()
 
     def close(self: Self) -> None:  # noqa: D102
-        self._free_signature_c_api_resources()
-        return super().close()
+        with self._rlock:
+            self._free_signature_c_api_resources()
+            return super().close()
 
     def close_signature(self: Self) -> None:
         """Close signature stream."""
-        self._free_signature_job_c_api_resources()
-        if self.raw_signature is not None and not self.signature_closed:
-            self.raw_signature.close()
+        with self._rlock:
+            self._free_signature_job_c_api_resources()
+            if self.raw_signature is not None and not self.signature_closed:
+                self.raw_signature.close()
 
     def detach_signature(self: Self) -> io.RawIOBase:
         """Detach from the underlying signature stream and return it."""
-        if self.raw_signature is None:
-            msg = "raw_signature stream already detached"
-            raise ValueError(msg)
-        raw_signature = self._raw_sig
-        self._raw_sig = None
-        self._free_signature_job_c_api_resources()
-        return raw_signature
+        with self._rlock:
+            if self.raw_signature is None:
+                msg = "raw_signature stream already detached"
+                raise ValueError(msg)
+            raw_signature = self._raw_sig
+            self._raw_sig = None
+            self._free_signature_job_c_api_resources()
+            return raw_signature
 
     def _load_signature_unlocked(self: Self) -> None:
         """Load the signature for creating the delta from the signature stream."""
@@ -482,22 +499,26 @@ class Delta(Job):
     @property
     def signature_loaded(self: Self) -> bool:
         """Check the signature has been loaded. True after :meth:`load_signature()` is called."""
-        return self.__sig_loaded
+        with self._rlock:
+            return self.__sig_loaded
 
     @property
     def raw_signature(self: Self) -> io.RawIOBase:
         """Get the underlying raw signature stream."""
-        return self._raw_sig
+        with self._rlock:
+            return self._raw_sig
 
     @property
     def signature_closed(self: Self) -> bool:
         """Check if signature stream is closed."""
-        return self.raw_signature.closed
+        with self._rlock:
+            return self.raw_signature.closed
 
     @property
     def match_stats(self: Self) -> MatchStats:
         """Get delta match statistics."""
-        return get_match_stats(self.__sig)
+        with self._rlock:
+            return get_match_stats(self.__sig)
 
     def _check_signature_closed(self: Self) -> None:
         """Raise a ValueError if signature file is closed."""
@@ -531,10 +552,11 @@ class Delta(Job):
 
     def __del__(self: Self) -> None:
         """Deallocate the object."""
-        self.close_signature()
-        self._free_signature_c_api_resources()
-        self._free_signature_job_c_api_resources()
-        return super().__del__()
+        with self._rlock:
+            self.close_signature()
+            self._free_signature_c_api_resources()
+            self._free_signature_job_c_api_resources()
+            return super().__del__()
 
 
 class Patch(Job):
@@ -570,30 +592,35 @@ class Patch(Job):
 
     def detach_basis(self: Self) -> io.RawIOBase:
         """Detach from the underlying basis stream and return it."""
-        if self.raw_basis is None:
-            msg = "raw_basis stream already detached"
-            raise ValueError(msg)
-        raw_basis = self._raw_basis
-        self._raw_basis = None
-        self._free_c_api_resources()
-        return raw_basis
+        with self._rlock:
+            if self.raw_basis is None:
+                msg = "raw_basis stream already detached"
+                raise ValueError(msg)
+            raw_basis = self._raw_basis
+            self._raw_basis = None
+            self._free_c_api_resources()
+            return raw_basis
 
     def close_basis(self: Self) -> None:
         """Close basis stream."""
-        self._free_c_api_resources()
-        if self.raw_basis is not None and not self.basis_closed:
-            self.raw_basis.close()
+        with self._rlock:
+            self._free_c_api_resources()
+            if self.raw_basis is not None and not self.basis_closed:
+                self.raw_basis.close()
 
     @property
     def raw_basis(self: Self) -> io.RawIOBase:
         """Get the underlying raw basis stream."""
-        return self._raw_basis
+        with self._rlock:
+            return self._raw_basis
 
     @property
     def basis_closed(self: Self) -> bool:
         """Check if basis stream is closed."""
-        return self.raw_basis.closed
+        with self._rlock:
+            return self.raw_basis.closed
 
     def __del__(self) -> None:  # noqa: D105
-        self.close_basis()
-        return super().__del__()
+        with self._rlock:
+            self.close_basis()
+            return super().__del__()
