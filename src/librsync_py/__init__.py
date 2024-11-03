@@ -5,8 +5,12 @@
 
 from librsync_py._internals import RsResult
 from librsync_py._internals.wrappers import RsSignatureMagic
+from librsync_py.stream import Delta, Patch, Signature
 
 __all__ = [
     "RsResult",
     "RsSignatureMagic",
+    "Signature",
+    "Delta",
+    "Patch",
 ]
