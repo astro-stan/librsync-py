@@ -616,7 +616,6 @@ class Delta(_Job):
         if result == RsResult.DONE:
             build_hash_table(self.__sig)  # Index the signature
             self.__sig_loaded = True
-            self.close_signature()
             self._free_signature_job_c_api_resources()
 
         return total_read
@@ -691,6 +690,11 @@ class Delta(_Job):
             self._free_signature_job_c_api_resources()
             return super().__del__()
 
+    def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Context management protocol. Calls close()."""
+        self.close_signature()
+        return super().__exit__(*args, **kwargs)
+
 
 class Patch(_Job):
     """Patch a file-like object.
@@ -761,3 +765,8 @@ class Patch(_Job):
         with self._rlock:
             self.close_basis()
             return super().__del__()
+
+    def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Context management protocol. Calls close()."""
+        self.close_basis()
+        return super().__exit__(*args, **kwargs)
