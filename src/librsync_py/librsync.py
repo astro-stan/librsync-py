@@ -568,10 +568,10 @@ class Patch(Job):
     which can be read to get the patched contents. Note however, that this
     object is not seekable.
 
-    :param delta_raw: The source delta stream
-    :type delta_raw: io.RawIOBase
     :param basis_raw: The source basis stream
     :type basis_raw: io.RawIOBase
+    :param delta_raw: The source delta stream
+    :type delta_raw: io.RawIOBase
     :param buffer_size: The size of the cache buffer in bytes. For files above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -580,8 +580,8 @@ class Patch(Job):
 
     def __init__(
         self: Self,
-        delta_raw: io.RawIOBase,
         basis_raw: io.RawIOBase,
+        delta_raw: io.RawIOBase,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
