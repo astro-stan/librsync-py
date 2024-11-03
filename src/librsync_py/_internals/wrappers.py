@@ -532,8 +532,12 @@ def _get_sig_args(
     return RsSignatureMagic(sig_magic_p[0]), block_length_p[0], hash_length_p[0]
 
 
-def _build_hash_table(sig_pp: CTypesData) -> None:
+def build_hash_table(sig_pp: CTypesData) -> None:
     """Index a signature after loading.
+
+    Must be called on a signature after the load signature job (created with
+    :meth:`loadsig_begin`) has been passed to :meth:`job_iter` and the job
+    has completed.
 
     When the signature handle is no longer needed, it must be deallocated with
     :meth:`free_sig`.
@@ -839,15 +843,13 @@ def delta_begin(sig_pp: CTypesData) -> CTypesData:
     When the job completes, the signature handle must be deallocated with
     :meth:`free_sig` and the job handle must be deallocated with :meth:`free_job`.
 
-    :param sig_pp: The signature handle
+    :param sig_pp: The signature handle. The signature must have first been
+    indexed with :meth:`build_hash_table`.
     :type sig_pp: CTypesData
     :returns: The job handle
     :rtype: CTypesData
     :raises RsCApiError: If something goes wrong while inside the C API
     """
-    # The signature must be indexed before use
-    # _build_hash_table will also validate it
-    _build_hash_table(sig_pp)
     return _lib.rs_delta_begin(sig_pp[0])
 
 
