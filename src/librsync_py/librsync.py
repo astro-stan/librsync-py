@@ -22,6 +22,7 @@ from librsync_py._internals.wrappers import (
     get_match_stats,
     job_iter,
     loadsig_begin,
+    patch_begin,
     sig_begin,
 )
 
@@ -533,4 +534,66 @@ class Delta(Job):
         self.close_signature()
         self._free_signature_c_api_resources()
         self._free_signature_job_c_api_resources()
+        return super().__del__()
+
+
+class Patch(Job):
+    """Patch a file-like object.
+
+    Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
+    which can be read to get the patched contents. Note however, that this
+    object is not seekable.
+
+    :param delta_raw: The source delta stream
+    :type delta_raw: io.RawIOBase
+    :param basis_raw: The source basis stream
+    :type basis_raw: io.RawIOBase
+    :param buffer_size: The size of the cache buffer in bytes. For files above
+    1GB, good values are typically in the range of 1MB-16MB. Experimentation
+    and/or profiling may be needed to achieve optimal results
+    :type buffer_size: int
+    """
+
+    def __init__(
+        self: Self,
+        delta_raw: io.RawIOBase,
+        basis_raw: io.RawIOBase,
+        buffer_size: int = io.DEFAULT_BUFFER_SIZE,
+    ) -> None:
+        """Create the object."""
+        self._raw_basis = basis_raw
+        super().__init__(
+            job=patch_begin(self._raw_basis),
+            raw=delta_raw,
+            buffer_size=buffer_size,
+        )
+
+    def detach_basis(self: Self) -> io.RawIOBase:
+        """Detach from the underlying basis stream and return it."""
+        if self.raw_basis is None:
+            msg = "raw_basis stream already detached"
+            raise ValueError(msg)
+        raw_basis = self._raw_basis
+        self._raw_basis = None
+        self._free_c_api_resources()
+        return raw_basis
+
+    def close_basis(self: Self) -> None:
+        """Close basis stream."""
+        self._free_c_api_resources()
+        if self.raw_basis is not None and not self.basis_closed:
+            self.raw_basis.close()
+
+    @property
+    def raw_basis(self: Self) -> io.RawIOBase:
+        """Get the underlying raw basis stream."""
+        return self._raw_basis
+
+    @property
+    def basis_closed(self: Self) -> bool:
+        """Check if basis stream is closed."""
+        return self.raw_basis.closed
+
+    def __del__(self) -> None:  # noqa: D105
+        self.close_basis()
         return super().__del__()
