@@ -39,7 +39,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
 
 
-class Job(io.BufferedIOBase):
+class _Job(io.BufferedIOBase):
     """Librsync job wrapper.
 
     Accepts a librsync job, allocated with `sig_begin`, `loadsig_begin`,
@@ -320,7 +320,7 @@ class Job(io.BufferedIOBase):
             return f"<{modname}.{clsname} name={name!r}>"
 
 
-class Signature(Job):
+class Signature(_Job):
     """Generate a new signature.
 
     Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
@@ -367,7 +367,7 @@ class Signature(Job):
         )
 
 
-class Delta(Job):
+class Delta(_Job):
     """Generate a new delta.
 
     Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
@@ -622,7 +622,7 @@ class Delta(Job):
             return super().__del__()
 
 
-class Patch(Job):
+class Patch(_Job):
     """Patch a file-like object.
 
     Creates a new buffered reader object, similar to :class:`io.BufferedReader`,
