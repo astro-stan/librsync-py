@@ -288,6 +288,7 @@ class Job(io.BufferedIOBase):
     def job_stats(self: Self) -> JobStats:
         """Get job statistics."""
         with self._rlock:
+            self._check_c_api_freed()
             return get_job_stats(self.__job)
 
     def __del__(self) -> None:
@@ -518,6 +519,7 @@ class Delta(Job):
     def match_stats(self: Self) -> MatchStats:
         """Get delta match statistics."""
         with self._rlock:
+            self._check_signature_c_api_freed()
             return get_match_stats(self.__sig)
 
     def _check_signature_closed(self: Self) -> None:
