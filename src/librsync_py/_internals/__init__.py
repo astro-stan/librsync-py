@@ -7,6 +7,8 @@ from enum import IntEnum
 from sys import version_info
 from typing import cast
 
+from .wrappers import RsSignatureMagic
+
 if version_info < (3, 11):  # pragma: no cover
     from typing_extensions import Self
 else:  # pragma: no cover
@@ -82,3 +84,9 @@ class RsResult(IntEnum):
     def __str__(self: Self) -> str:
         """To string."""
         return f"{self.description} ({self.value})."
+
+
+__all__ = [
+    "RsResult",
+    "RsSignatureMagic",
+]

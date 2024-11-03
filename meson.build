@@ -202,6 +202,7 @@ python.install_sources(
         'src' / meson.project_name() / '__init__.py',
         'src' / meson.project_name() / 'exceptions.py',
         'src' / meson.project_name() / 'stream.py',
+        'src' / meson.project_name() / 'whole.py',
     ]),
     subdir: meson.project_name(),
 )
