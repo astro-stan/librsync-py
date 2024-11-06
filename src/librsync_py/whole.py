@@ -27,8 +27,7 @@ def signature(  # noqa: PLR0913
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
     :type chunk_size: int
-    :file_size: The size of the file-like object.
-    Set to `None` if unknown
+    :param file_size: The size of the file-like object. Set to `None` if unknown.
     :type file_size: int
     :param block_length: The signature block length. Larger values make a
     shorter signature but increase the delta file size. Use 0 for recommended.
