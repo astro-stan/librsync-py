@@ -247,6 +247,41 @@ class _PatchHandle:
             raise ValueError(err)
 
 
+def _check_job_handle_valid(p_job_handle: CTypesData) -> None:
+    """Validate a job handle.
+
+    :param p_job_handle: The job handle to validate
+    :type p_job_handle: CTypesData
+    :raises ValueError: if the handle is not valid
+    """
+    if not (p_job_handle and p_job_handle != _ffi.NULL):
+        err =  "Invalid job handle."
+        raise ValueError(err)
+
+def _check_sig_handle_valid(pp_sig_handle: CTypesData) -> None:
+    """Validate a signature handle.
+
+    :param pp_sig_handle: The signature handle to validate
+    :type pp_sig_handle: CTypesData
+    :raises ValueError: if the handle is not valid
+    """
+    if not (pp_sig_handle and pp_sig_handle != _ffi.NULL and pp_sig_handle[0] != _ffi.NULL):
+        err =  "Invalid signature handle."
+        raise ValueError(err)
+
+
+def _check_buffers_handle_valid(p_buffers_handle: CTypesData) -> None:
+    """Validate a buffers handle.
+
+    :param p_buffers_handle: The buffers handle to validate
+    :type p_buffers_handle: CTypesData
+    :raises ValueError: if the handle is not valid
+    """
+    if not (p_buffers_handle and p_buffers_handle != _ffi.NULL):
+        err =  "Invalid buffers handle."
+        raise ValueError(err)
+
+
 def _validate_sig_args(
     magic: RsSignatureMagic,
     block_length: int,
@@ -296,7 +331,8 @@ def _validate_signature(pp_sig_handle: CTypesData) -> None:
 
     :raises ValueError: If validation fails
     """
-    err = ""
+    _check_sig_handle_valid(pp_sig_handle)
+
     sig = pp_sig_handle[0][0]
 
     _validate_sig_args(sig.magic, sig.block_len, sig.strong_sum_len)
@@ -307,8 +343,6 @@ def _validate_signature(pp_sig_handle: CTypesData) -> None:
         and (sig.hashtable == _ffi.NULL or sig.hashtable.count <= sig.count)
     ):
         err = "Invalid signature."
-
-    if err:
         raise ValueError(err)
 
 
@@ -319,15 +353,11 @@ def _validate_job(p_job_handle: CTypesData) -> None:
 
     :raises ValueError: If validation fails
     """
-    err = ""
-    job = p_job_handle[0]
+    _check_job_handle_valid(p_job_handle)
 
-    if job.dogtag != 20010225:  # noqa: PLR2004
+    if p_job_handle[0].dogtag != 20010225:  # noqa: PLR2004
         err = "Invalid job."
-
-    if err:
         raise ValueError(err)
-
 
 def _handle_rs_result(
     result: int | RsResult,
@@ -391,22 +421,22 @@ def _new_rs_buffers_t_p_handle(
         err = f"output {err_explanation}"
         raise ValueError(err)
 
-    p_buffers = _ffi.new("rs_buffers_t *")
+    p_buffers_handle = _ffi.new("rs_buffers_t *")
 
     p_in_buf = _ffi.from_buffer("char[]", input_, require_writable=False)
-    p_buffers[0].next_in = p_in_buf
-    p_buffers[0].avail_in = len(p_in_buf)
+    p_buffers_handle[0].next_in = p_in_buf
+    p_buffers_handle[0].avail_in = len(p_in_buf)
 
     p_out_buf = _ffi.from_buffer("char[]", output, require_writable=True)
-    p_buffers[0].next_out = p_out_buf
-    p_buffers[0].avail_out = len(p_out_buf)
+    p_buffers_handle[0].next_out = p_out_buf
+    p_buffers_handle[0].avail_out = len(p_out_buf)
 
-    p_buffers[0].eof_in = eof
+    p_buffers_handle[0].eof_in = eof
 
     # Keep input and output buffers alive until the parent struct is GCed
-    _global_weakkeydict[p_buffers] = (p_in_buf, p_out_buf)
+    _global_weakkeydict[p_buffers_handle] = (p_in_buf, p_out_buf)
 
-    return p_buffers
+    return p_buffers_handle
 
 
 def _new_rs_signature_t_pp_handle() -> CTypesData:
@@ -417,22 +447,24 @@ def _new_rs_signature_t_pp_handle() -> CTypesData:
     return _ffi.new("rs_signature_t **")
 
 
-def _get_rs_buffers_t_unused_input_data_size(buffers_p: CTypesData) -> int:
+def _get_rs_buffers_t_unused_input_data_size(p_buffers_handle: CTypesData) -> int:
     """Get the size of the unused intput data buffer inside `rs_buffers_t`.
 
-    :param buffers_p: The rs_buffers_t handle
-    :type buffers_p: CTypesData
+    :param p_buffers_handle: The rs_buffers_t handle
+    :type p_buffers_handle: CTypesData
     """
-    return buffers_p[0].avail_in
+    _check_buffers_handle_valid(p_buffers_handle)
+    return p_buffers_handle[0].avail_in
 
 
-def _get_rs_buffers_t_unused_output_data_size(buffers_p: CTypesData) -> int:
+def _get_rs_buffers_t_unused_output_data_size(p_buffers_handle: CTypesData) -> int:
     """Get the size of the unused output data buffer inside `rs_buffers_t`.
 
-    :param buffers_p: The rs_buffers_t handle
-    :type buffers_p: CTypesData
+    :param p_buffers_handle: The rs_buffers_t handle
+    :type p_buffers_handle: CTypesData
     """
-    return buffers_p[0].avail_out
+    _check_buffers_handle_valid(p_buffers_handle)
+    return p_buffers_handle[0].avail_out
 
 
 def _get_job_t_copy_arg(p_job_handle: CTypesData) -> Any | None:  # noqa: ANN401
@@ -445,6 +477,7 @@ def _get_job_t_copy_arg(p_job_handle: CTypesData) -> Any | None:  # noqa: ANN401
     :returns: The python object pointed to by the `copy_arg` field or None
     :returns: Union[Any, None]
     """
+    _validate_job(p_job_handle)
     if p_job_handle[0].copy_arg != _ffi.NULL:
         return _ffi.from_handle(p_job_handle[0].copy_arg)
     return None
@@ -582,38 +615,39 @@ def _on_patch_copy_error(handle_name: str) -> Callable:
 
 @_ffi.def_extern(
     error=RsResult.IO_ERROR,  # Return this from the callback if an exception is raised.
-    onerror=_on_patch_copy_error("opaque_p"),  # Handle any raised exceptions
+    onerror=_on_patch_copy_error("p_opaque"),  # Handle any raised exceptions
 )
 def _patch_copy_callback(
-    opaque_p: CTypesData,  # Keep name in sync with the `onerror` handler above
+    p_opaque: CTypesData,  # Keep name in sync with the `onerror` handler above
     pos: int,
-    len_p: CTypesData,
-    buf_pp: CTypesData,
+    p_len: CTypesData,
+    pp_buf: CTypesData,
 ) -> RsResult:
     """Copy data from a basis file during a patching iteration.
 
     Invoked from the C API during a call to :meth:`job_iter` or
     :meth:`job_drive`.
 
-    :param opaque_p: A pointer to the file-like python object
-    :type opaque_p: CTypesData
+    :param p_opaque: A pointer to the file-like python object
+    :type p_opaque: CTypesData
     :param pos: Position where copying should begin
     :type pos: int
-    :param len_p: A pointer to an integer type. On input, the amount of data
+    :param p_len: A pointer to an integer type. On input, the amount of data
     that should be retrieved. Updated to show how much is actually available,
     but should not be greater than the input value.
-    :type len_p: CTypesData
-    :param buf_pp: A double pointer to a buffer of at least `len_p[0]` bytes.
+    :type p_len: CTypesData
+    :param pp_buf: A double pointer to a buffer of at least `p_len[0]` bytes.
     May be updated to point to another buffer holding the data if prefered.
+    :type pp_buf: CTypesData
     """
-    patch_handle = cast(_PatchHandle, _ffi.from_handle(opaque_p))
+    patch_handle = cast(_PatchHandle, _ffi.from_handle(p_opaque))
     basis = patch_handle.basis
 
     for x in range(_MAX_COPY_OP_RETRIES + 1):
         try:
             # Read data from the basis
             basis.seek(pos)
-            data = basis.read(len_p[0])
+            data = basis.read(p_len[0])
             break
         # Normally if `.seek()` or `.read()` raises an error, it should be
         # captured by CFFI and this callback should return `RsResult.IO_ERROR`
@@ -624,7 +658,7 @@ def _patch_copy_callback(
         # *yet* available. In this case there are 2 options:
         #   1. Block inside this callback to wait for the data. This will block
         #      the thread running :meth:`job_iter`.
-        #   2. Return no data (len_p[0] == 0) and `RsResult.BLOCKED` or
+        #   2. Return no data (p_len[0] == 0) and `RsResult.BLOCKED` or
         #      `RsResult.DONE`
         #
         # Option 2 sounds like the correct thing to do, however, due to librsync
@@ -636,17 +670,17 @@ def _patch_copy_callback(
             if x < _MAX_COPY_OP_RETRIES:
                 time.sleep(_SLEEP_DURATION_BETWEEN_COPY_OP_RETRIES)
             else:
-                len_p[0] = 0
+                p_len[0] = 0
                 raise  # Something is wrong. Give up.
 
     # Update the length with the actual read length
-    len_p[0] = len(data)
+    p_len[0] = len(data)
 
     if len(data) == 0:
         return RsResult.INPUT_ENDED
 
     # Copy the data to the buffer
-    c_buffer = _ffi.buffer(buf_pp[0], len(data))
+    c_buffer = _ffi.buffer(pp_buf[0], len(data))
     c_buffer[:] = data
 
     return RsResult.DONE
@@ -697,10 +731,10 @@ def job_iter(
     """
     _validate_job(p_job_handle)
 
-    p_buffers = _new_rs_buffers_t_p_handle(input_, output, eof=eof)
+    p_buffers_handle = _new_rs_buffers_t_p_handle(input_, output, eof=eof)
 
     try:
-        result = _handle_rs_result(_lib.rs_job_iter(p_job_handle, p_buffers))
+        result = _handle_rs_result(_lib.rs_job_iter(p_job_handle, p_buffers_handle))
     except RsCApiError as e:
         # Patch jobs (initialised with :meth:`patch_begin`) should have
         # this arg set to an instance of :class:`_PatchHandle`.
@@ -714,8 +748,8 @@ def job_iter(
 
     return (
         result,
-        len(input_) - _get_rs_buffers_t_unused_input_data_size(p_buffers),
-        len(output) - _get_rs_buffers_t_unused_output_data_size(p_buffers),
+        len(input_) - _get_rs_buffers_t_unused_input_data_size(p_buffers_handle),
+        len(output) - _get_rs_buffers_t_unused_output_data_size(p_buffers_handle),
     )
 
 
@@ -724,6 +758,8 @@ def free_job(p_job_handle: CTypesData) -> None:
 
     :raises RsCApiError: If something goes wrong while inside the C API
     """
+    _check_job_handle_valid(p_job_handle)
+
     try:
         _handle_rs_result(
             _lib.rs_job_free(p_job_handle),
@@ -796,6 +832,8 @@ def loadsig_begin() -> tuple[CTypesData, CTypesData]:
 
 def free_sig(pp_sig_handle: CTypesData) -> None:
     """Free a signature."""
+    _check_sig_handle_valid(pp_sig_handle)
+
     try:
         _lib.rs_free_sumset(pp_sig_handle[0])  # Function returns void
     finally:
@@ -820,6 +858,11 @@ def delta_begin(pp_sig_handle: CTypesData) -> CTypesData:
     :rtype: CTypesData
     :raises RsCApiError: If something goes wrong while inside the C API
     """
+    # Purposefully only check the handle is valid here
+    # since the signature might not be fully loaded  or indexed yet.
+    # I.e. loadsig job might have not completed or
+    # the signature might not have been indexed yet.
+    _check_sig_handle_valid(pp_sig_handle)
     return _lib.rs_delta_begin(pp_sig_handle[0])
 
 
@@ -833,6 +876,8 @@ def get_match_stats(pp_sig_handle: CTypesData) -> MatchStats:
     :raises NotImplementedError: If librsync was compiled without match
     statistics support
     """
+    _validate_signature(pp_sig_handle)
+
     p_sig = pp_sig_handle[0]
 
     if getattr(p_sig[0], "calc_strong_count", None) is None:
@@ -897,6 +942,8 @@ def get_job_stats(p_job_handle: CTypesData) -> JobStats:
     :returns: The job statistics
     :rtype: JobStats
     """
+    _validate_job(p_job_handle)
+
     raw_stats = _lib.rs_job_statistics(p_job_handle)
 
     if raw_stats.op != _ffi.NULL:
