@@ -10,7 +10,7 @@ from librsync_py.whole import delta, patch, signature
 from ._internals.wrappers import get_lib_version_str as _get_lib_version_str
 
 LIBRSYNC_VERSION_STR: str = _get_lib_version_str()
-"""The libtic version string as returned by the C API."""
+"""The librsync version string as returned by the C API."""
 
 __all__ = [
     "LIBRSYNC_VERSION_STR",
