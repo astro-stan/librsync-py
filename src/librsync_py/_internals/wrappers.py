@@ -255,8 +255,9 @@ def _check_job_handle_valid(p_job_handle: CTypesData) -> None:
     :raises ValueError: if the handle is not valid
     """
     if not (p_job_handle and p_job_handle != _ffi.NULL):
-        err =  "Invalid job handle."
+        err = "Invalid job handle."
         raise ValueError(err)
+
 
 def _check_sig_handle_valid(pp_sig_handle: CTypesData) -> None:
     """Validate a signature handle.
@@ -265,8 +266,10 @@ def _check_sig_handle_valid(pp_sig_handle: CTypesData) -> None:
     :type pp_sig_handle: CTypesData
     :raises ValueError: if the handle is not valid
     """
-    if not (pp_sig_handle and pp_sig_handle != _ffi.NULL and pp_sig_handle[0] != _ffi.NULL):
-        err =  "Invalid signature handle."
+    if not (
+        pp_sig_handle and pp_sig_handle != _ffi.NULL and pp_sig_handle[0] != _ffi.NULL
+    ):
+        err = "Invalid signature handle."
         raise ValueError(err)
 
 
@@ -278,7 +281,7 @@ def _check_buffers_handle_valid(p_buffers_handle: CTypesData) -> None:
     :raises ValueError: if the handle is not valid
     """
     if not (p_buffers_handle and p_buffers_handle != _ffi.NULL):
-        err =  "Invalid buffers handle."
+        err = "Invalid buffers handle."
         raise ValueError(err)
 
 
@@ -358,6 +361,7 @@ def _validate_job(p_job_handle: CTypesData) -> None:
     if p_job_handle[0].dogtag != 20010225:  # noqa: PLR2004
         err = "Invalid job."
         raise ValueError(err)
+
 
 def _handle_rs_result(
     result: int | RsResult,
