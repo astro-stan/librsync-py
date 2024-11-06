@@ -625,8 +625,7 @@ def _patch_copy_callback(
 ) -> RsResult:
     """Copy data from a basis file during a patching iteration.
 
-    Invoked from the C API during a call to :meth:`job_iter` or
-    :meth:`job_drive`.
+    Invoked from the C API during a call to :meth:`job_iter`.
 
     :param p_opaque: A pointer to the file-like python object
     :type p_opaque: CTypesData
@@ -778,8 +777,7 @@ def sig_begin(
 ) -> CTypesData:
     """Start a signature generation.
 
-    Returns a job handle, which must be passed to :meth:`job_iter` or
-    :meth:`job_drive`.
+    Returns a job handle, which must be passed to :meth:`job_iter`.
 
     The job handle must be deallocated with :meth:`free_job` when no longer needed
     or the job completes.
@@ -812,8 +810,7 @@ def loadsig_begin() -> tuple[CTypesData, CTypesData]:
 
     Returns a signature handle and a job handle.
 
-    The job handle must be passed to :meth:`job_iter` or
-    :meth:`job_drive`.
+    The job handle must be passed to :meth:`job_iter`.
 
     The job handle must be deallocated with :meth:`free_job` when no longer needed
     or the job completes.
@@ -845,8 +842,7 @@ def free_sig(pp_sig_handle: CTypesData) -> None:
 def delta_begin(pp_sig_handle: CTypesData) -> CTypesData:
     """Start a delta file generation.
 
-    Returns a job handle, which must be passed to :meth:`job_iter` or
-    :meth:`job_drive`.
+    Returns a job handle, which must be passed to :meth:`job_iter`.
 
     When the job completes, the signature handle must be deallocated with
     :meth:`free_sig` and the job handle must be deallocated with :meth:`free_job`.
@@ -905,8 +901,7 @@ def get_match_stats(pp_sig_handle: CTypesData) -> MatchStats:
 def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     """Start a patched file generation.
 
-    Returns a job handle, which must be passed to :meth:`job_iter` or
-    :meth:`job_drive`.
+    Returns a job handle, which must be passed to :meth:`job_iter`.
 
     The job handle must be deallocated with :meth:`free_job` when no longer needed
     or the job completes.
