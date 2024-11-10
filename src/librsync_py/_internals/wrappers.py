@@ -239,11 +239,8 @@ class _PatchHandle:
 
     def validate_exc(self) -> None:
         """Validate exc."""
-        err = ""
         if not (self.exc is None or isinstance(self.exc, BaseException)):
             err = "exc: Expected an instance of BaseException() or None"
-
-        if err:
             raise ValueError(err)
 
 
