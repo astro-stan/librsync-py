@@ -8,7 +8,7 @@ import io
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import IntEnum, StrEnum
+from enum import Enum, IntEnum
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
@@ -51,11 +51,11 @@ class RsDeltaMagic(IntEnum):
     """A delta file."""
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True)
 class JobStats:
     """librsync job statistics."""
 
-    class JobType(StrEnum):
+    class JobType(str, Enum):
         """librsync job type."""
 
         NOOP = ""
@@ -137,7 +137,7 @@ class JobStats:
         return float(self.out_bytes / (self.time_taken or 1))
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True)
 class MatchStats:
     """Delta file match statistics."""
 
