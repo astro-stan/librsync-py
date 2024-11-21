@@ -78,7 +78,7 @@ class _Job(io.BufferedIOBase):
 
         self._rlock = RLock()
         self._raw = raw
-        self.__job = job
+        self._job = job
 
         # Used to collect leftover unproceesed data read from the raw stream
         self._raw_buf = b""
@@ -372,7 +372,7 @@ class _Job(io.BufferedIOBase):
 
             with memoryview(self._raw_buf) as ib:
                 result, read, written = job_iter(
-                    self.__job,
+                    self._job,
                     ib,
                     buf[out_pos:],
                     eof=not bool(cap),
@@ -403,15 +403,15 @@ class _Job(io.BufferedIOBase):
         """Deallocate C API resources."""
         # If during teardown the attribute does not exist
         # exit immediately, there is nothing to cleanup
-        if not hasattr(self, "__job"):
+        if not hasattr(self, "_job"):
             return
-        if self.__job:
-            free_job(self.__job)
-            self.__job = None
+        if self._job:
+            free_job(self._job)
+            self._job = None
 
     def _check_c_api_freed(self: Self) -> None:
         """Raise ValueError if the C API resources have been freed."""
-        if not self.__job:
+        if not self._job:
             msg = "I/O operation on a freed librsync job"
             raise ValueError(msg)
 
@@ -444,7 +444,7 @@ class _Job(io.BufferedIOBase):
         """Get job statistics."""
         with self._rlock:
             self._check_c_api_freed()
-            return get_job_stats(self.__job)
+            return get_job_stats(self._job)
 
     def __del__(self) -> None:
         """Deallocate the object."""
@@ -550,11 +550,11 @@ class Delta(_Job):
             raise OSError(msg)
 
         self._raw_sig = sig_raw
-        self.__sig_loaded = False
+        self._sig_loaded = False
         self._sig_buf = b""
-        self.__sig, self.__sig_job = loadsig_begin()
+        self._sig, self._sig_job = loadsig_begin()
         super().__init__(
-            job=delta_begin(self.__sig),
+            job=delta_begin(self._sig),
             raw=basis_raw,
             buffer_size=buffer_size,
         )
@@ -677,7 +677,7 @@ class Delta(_Job):
         if size is None or size < -1:
             size = -1
 
-        if self.__sig_loaded or size == 0:
+        if self._sig_loaded or size == 0:
             return 0
 
         chunk_size = max(size, self.buffer_size)
@@ -696,7 +696,7 @@ class Delta(_Job):
 
                 with memoryview(self._sig_buf) as in_mv:
                     result, read, _ = job_iter(
-                        self.__sig_job,
+                        self._sig_job,
                         in_mv[: size if size > 0 else len(self._sig_buf)],
                         out_mv,
                         eof=len(in_mv) == 0,
@@ -716,8 +716,8 @@ class Delta(_Job):
                     break
 
         if result == RsResult.DONE:
-            build_hash_table(self.__sig)  # Index the signature
-            self.__sig_loaded = True
+            build_hash_table(self._sig)  # Index the signature
+            self._sig_loaded = True
             self._free_signature_job_c_api_resources()
 
         return total_read
@@ -748,31 +748,31 @@ class Delta(_Job):
         """Deallocate signature C API resources."""
         # If during teardown the attribute does not exist
         # exit immediately, there is nothing to cleanup
-        if not hasattr(self, "__sig"):
+        if not hasattr(self, "_sig"):
             return
-        if self.__sig:
-            free_sig(self.__sig)
-            self.__sig = None
+        if self._sig:
+            free_sig(self._sig)
+            self._sig = None
 
     def _free_signature_job_c_api_resources(self: Self) -> None:
         """Deallocate signature job C API resources."""
         # If during teardown the attribute does not exist
         # exit immediately, there is nothing to cleanup
-        if not hasattr(self, "__sig_job"):
+        if not hasattr(self, "_sig_job"):
             return
-        if self.__sig_job:
-            free_job(self.__sig_job)
-            self.__sig_job = None
+        if self._sig_job:
+            free_job(self._sig_job)
+            self._sig_job = None
 
     def _check_signature_c_api_freed(self: Self) -> None:
         """Raise ValueError if the signature C API resources have been freed."""
-        if not self.__sig:
+        if not self._sig:
             msg = "I/O operation on a freed librsync signature"
             raise ValueError(msg)
 
     def _check_signature_job_c_api_freed(self: Self) -> None:
         """Raise ValueError if the signature job C API resources have been freed."""
-        if not self.__sig_job:
+        if not self._sig_job:
             msg = "I/O operation on a freed librsync job"
             raise ValueError(msg)
 
@@ -780,7 +780,7 @@ class Delta(_Job):
     def signature_loaded(self: Self) -> bool:
         """Check the signature has been loaded. True after :meth:`load_signature()` is called."""
         with self._rlock:
-            return self.__sig_loaded
+            return self._sig_loaded
 
     @property
     def raw_signature(self: Self) -> io.RawIOBase:
@@ -799,7 +799,7 @@ class Delta(_Job):
         """Get delta match statistics."""
         with self._rlock:
             self._check_signature_c_api_freed()
-            return get_match_stats(self.__sig)
+            return get_match_stats(self._sig)
 
     def __del__(self: Self) -> None:
         """Deallocate the object."""

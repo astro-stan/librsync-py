@@ -7,11 +7,8 @@ from __future__ import annotations
 
 import io
 import re
-from ast import Del
-from turtle import bye
 
 import pytest
-from numpy import isin
 
 from librsync_py import Delta, Patch, RsSignatureMagic, Signature
 
@@ -191,7 +188,7 @@ def test_signature_init_args() -> None:
     s = Signature(stream)
     # The librsync sig_begin args are directly passed to the C API and
     # out of the scope of this test.
-    assert s._Job__job is not None  # noqa: SLF001
+    assert s._job is not None  # noqa: SLF001
     assert s.buffer_size == io.DEFAULT_BUFFER_SIZE
     assert s.raw is stream
 
@@ -226,9 +223,9 @@ def test_delta_init_args() -> None:
     sig_stream = io.BytesIO(b"")
     basis_stream = io.BytesIO(b"")
     d = Delta(sig_stream, basis_stream)
-    assert d._Job__job is not None  # noqa: SLF001
-    assert d._Delta__sig_job is not None  # noqa: SLF001
-    assert d._Delta__sig is not None  # noqa: SLF001
+    assert d._job is not None  # noqa: SLF001
+    assert d._sig_job is not None  # noqa: SLF001
+    assert d._sig is not None  # noqa: SLF001
     assert d.raw_signature is sig_stream
     assert d.raw is basis_stream
     assert d.buffer_size == io.DEFAULT_BUFFER_SIZE
@@ -239,7 +236,7 @@ def test_patch_init_args() -> None:
     basis_stream = io.BytesIO(b"")
     delta_stream = io.BytesIO(b"")
     p = Patch(basis_stream, delta_stream)
-    assert p._Job__job is not None  # noqa: SLF001
+    assert p._job is not None  # noqa: SLF001
     assert p.buffer_size == io.DEFAULT_BUFFER_SIZE
     assert p.raw is delta_stream
     assert p.raw_basis is basis_stream
@@ -367,7 +364,6 @@ def test_readinto(cls: type[Signature | Delta | Patch]) -> None:
     res = obj.readinto(buffer)
     assert isinstance(res, int) and res > 0
     assert buffer != bytearray(data_size)
-
 
 # @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 # def test_reading(cls: type[Signature | Delta | Patch]) -> None:
