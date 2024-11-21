@@ -30,6 +30,7 @@ rs_result _patch_copy_callback(
     void *opaque,
     rs_long_t pos,
     size_t *len,
-    void **buf);
+    void **buf
+);
 
 }

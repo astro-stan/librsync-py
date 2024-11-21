@@ -228,19 +228,19 @@ class _PatchHandle:
         """Validate basis."""
         err = ""
         if not isinstance(self.basis, (io.BufferedIOBase, io.RawIOBase)):
-            err = "basis: Expected a binary file-like object."
+            err = "Expected a binary file-like object."
         elif self.basis.closed or not self.basis.readable():
-            err = "basis: Expected a file-like object that is open for reading."
+            err = "Expected a file-like object that is open for reading."
         elif not self.basis.seekable():
-            err = "basis: Expected a file-like object which supports random access (.seek())."
+            err = "Expected a file-like object which supports random access (.seek())."
 
         if err:
-            raise ValueError(err)
+            raise OSError(err)
 
     def validate_exc(self) -> None:
         """Validate exc."""
         if not (self.exc is None or isinstance(self.exc, BaseException)):
-            err = "exc: Expected an instance of BaseException() or None"
+            err = "Expected an instance of BaseException() or None"
             raise ValueError(err)
 
 
@@ -299,7 +299,7 @@ def _validate_sig_args(
     :type block_length: int
     :param hash_length: The signature hash length
     :type hash_length: int
-    :param get_sig_args_call: True if this is a call to `rs_get_sig_args()`
+    :param get_sig_args_call: True if this is for a call to `rs_get_sig_args()`
     :type get_sig_args_call:  bool
     :raises ValueError: If validation fails
     """
@@ -913,6 +913,7 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     :returns: The job handle
     :rtype: CTypesData
     :raises ValueError: If there is something wrong with the provided arugments
+    :raises OSError: If there is something wrong with the provided arugments
     """
     patch_handle = _PatchHandle(basis)
     p_patch_handle = _ffi.new_handle(patch_handle)

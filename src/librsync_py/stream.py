@@ -187,9 +187,8 @@ class _Job(io.BufferedIOBase):
         :raises ValueError: If reader is closed or in invalid state
         """
         with self._rlock:
+            self._close()
             self._free_c_api_resources()
-            if self.raw is not None and not self.closed:
-                self.raw.close()
 
     def detach(self: Self) -> io.RawIOBase:
         """Detach from the underlying stream and return it.
@@ -223,7 +222,7 @@ class _Job(io.BufferedIOBase):
         :raises RsCApiError: If something goes wrong during the read
         :raises ValueError: If input param validation fails
         """
-        if size is None:
+        if size is None or size < -1:
             size = -1
 
         if size == 0:
@@ -239,8 +238,8 @@ class _Job(io.BufferedIOBase):
         chunks = [self._buf]
         total_length = len(self._buf)
 
-        chunk_size = max(self.buffer_size, size)
-        chunk_buffer = bytearray(chunk_size)  # Chunk output buffer
+        # Chunk output buffer
+        chunk_buffer = bytearray(max(self.buffer_size, size))
 
         result = RsResult.BLOCKED
         with memoryview(chunk_buffer) as mv:
@@ -304,8 +303,24 @@ class _Job(io.BufferedIOBase):
 
         return result, out_pos
 
+    def _close(self: Self) -> None:
+        """Close the stream.
+
+        :raises ValueError: If reader is closed or in invalid state
+        """
+        # If during teardown the attributes do not exist
+        # exit immediately, there is nothing to cleanup
+        if not (hasattr(self, "raw") and hasattr(self, "closed")):
+            return
+        if self.raw is not None and not self.closed:
+            self.raw.close()
+
     def _free_c_api_resources(self: Self) -> None:
         """Deallocate C API resources."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not hasattr(self, "__job"):
+            return
         if self.__job:
             free_job(self.__job)
             self.__job = None
@@ -349,10 +364,9 @@ class _Job(io.BufferedIOBase):
 
     def __del__(self) -> None:
         """Deallocate the object."""
-        with self._rlock:
-            self.close()
-            self._free_c_api_resources()
-            return super().__del__()
+        self._close()
+        self._free_c_api_resources()
+        return super().__del__()
 
     def __getstate__(self: Self) -> dict:
         """Pickle object."""
@@ -447,6 +461,10 @@ class Delta(_Job):
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
+        if not sig_raw.readable():
+            msg = '"sig_raw" argument must be readable.'
+            raise OSError(msg)
+
         self._raw_sig = sig_raw
         self.__sig_loaded = False
         self._sig_buf = b""
@@ -534,9 +552,8 @@ class Delta(_Job):
     def close_signature(self: Self) -> None:
         """Close signature stream."""
         with self._rlock:
+            self._close_signature()
             self._free_signature_job_c_api_resources()
-            if self.raw_signature is not None and not self.signature_closed:
-                self.raw_signature.close()
 
     def detach_signature(self: Self) -> io.RawIOBase:
         """Detach from the underlying signature stream and return it.
@@ -573,11 +590,11 @@ class Delta(_Job):
         :returns: The amount of bytes loaded.
         :rtype: int
         """
-        if self.__sig_loaded:
-            return 0
-
-        if size is None:
+        if size is None or size < -1:
             size = -1
+
+        if self.__sig_loaded or size == 0:
+            return 0
 
         chunk_size = max(size, self.buffer_size)
         if chunk_size < 1:
@@ -628,6 +645,53 @@ class Delta(_Job):
             raise ValueError(msg)
         self._check_signature_c_api_freed()
 
+    def _close_signature(self: Self) -> None:
+        """Close signature stream."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not (hasattr(self, "raw_signature") and hasattr(self, "signature_closed")):
+            return
+        if self.raw_signature is not None and not self.signature_closed:
+            self.raw_signature.close()
+
+    def _check_signature_closed(self: Self) -> None:
+        """Raise a ValueError if signature file is closed."""
+        if self.signature_closed:
+            msg = "I/O operation on closed file."
+            raise ValueError(msg)
+
+    def _free_signature_c_api_resources(self: Self) -> None:
+        """Deallocate signature C API resources."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not hasattr(self, "__sig"):
+            return
+        if self.__sig:
+            free_sig(self.__sig)
+            self.__sig = None
+
+    def _free_signature_job_c_api_resources(self: Self) -> None:
+        """Deallocate signature job C API resources."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not hasattr(self, "__sig_job"):
+            return
+        if self.__sig_job:
+            free_job(self.__sig_job)
+            self.__sig_job = None
+
+    def _check_signature_c_api_freed(self: Self) -> None:
+        """Raise ValueError if the signature C API resources have been freed."""
+        if not self.__sig:
+            msg = "I/O operation on a freed librsync signature"
+            raise ValueError(msg)
+
+    def _check_signature_job_c_api_freed(self: Self) -> None:
+        """Raise ValueError if the signature job C API resources have been freed."""
+        if not self.__sig_job:
+            msg = "I/O operation on a freed librsync job"
+            raise ValueError(msg)
+
     @property
     def signature_loaded(self: Self) -> bool:
         """Check the signature has been loaded. True after :meth:`load_signature()` is called."""
@@ -653,43 +717,12 @@ class Delta(_Job):
             self._check_signature_c_api_freed()
             return get_match_stats(self.__sig)
 
-    def _check_signature_closed(self: Self) -> None:
-        """Raise a ValueError if signature file is closed."""
-        if self.signature_closed:
-            msg = "I/O operation on closed file."
-            raise ValueError(msg)
-
-    def _free_signature_c_api_resources(self: Self) -> None:
-        """Deallocate signature C API resources."""
-        if self.__sig:
-            free_sig(self.__sig)
-            self.__sig = None
-
-    def _free_signature_job_c_api_resources(self: Self) -> None:
-        """Deallocate signature job C API resources."""
-        if self.__sig_job:
-            free_job(self.__sig_job)
-            self.__sig_job = None
-
-    def _check_signature_c_api_freed(self: Self) -> None:
-        """Raise ValueError if the signature C API resources have been freed."""
-        if not self.__sig:
-            msg = "I/O operation on a freed librsync signature"
-            raise ValueError(msg)
-
-    def _check_signature_job_c_api_freed(self: Self) -> None:
-        """Raise ValueError if the signature job C API resources have been freed."""
-        if not self.__sig_job:
-            msg = "I/O operation on a freed librsync job"
-            raise ValueError(msg)
-
     def __del__(self: Self) -> None:
         """Deallocate the object."""
-        with self._rlock:
-            self.close_signature()
-            self._free_signature_c_api_resources()
-            self._free_signature_job_c_api_resources()
-            return super().__del__()
+        self._close_signature()
+        self._free_signature_c_api_resources()
+        self._free_signature_job_c_api_resources()
+        return super().__del__()
 
     def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
         """Context management protocol. Calls close()."""
@@ -746,9 +779,17 @@ class Patch(_Job):
     def close_basis(self: Self) -> None:
         """Close basis stream."""
         with self._rlock:
+            self._close_basis()
             self._free_c_api_resources()
-            if self.raw_basis is not None and not self.basis_closed:
-                self.raw_basis.close()
+
+    def _close_basis(self: Self) -> None:
+        """Close basis stream."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not (hasattr(self, "raw_basis") and hasattr(self, "basis_closed")):
+            return
+        if self.raw_basis is not None and not self.basis_closed:
+            self.raw_basis.close()
 
     @property
     def raw_basis(self: Self) -> io.RawIOBase:
@@ -763,9 +804,9 @@ class Patch(_Job):
             return self.raw_basis.closed
 
     def __del__(self) -> None:  # noqa: D105
-        with self._rlock:
-            self.close_basis()
-            return super().__del__()
+        self._close_basis()
+        self._free_c_api_resources()
+        return super().__del__()
 
     def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
         """Context management protocol. Calls close()."""
