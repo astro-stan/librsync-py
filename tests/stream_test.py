@@ -289,6 +289,7 @@ def test_read(cls: type[Signature | Delta | Patch]) -> None:
         get_obj = lambda: _get_patch(basis=data_size, buffer_size=buffer_size)
 
     obj = get_obj()
+    assert obj.readable()
 
     res = obj.read(0)
     assert isinstance(res, bytes) and len(res) == 0
@@ -310,18 +311,8 @@ def test_read(cls: type[Signature | Delta | Patch]) -> None:
         assert isinstance(res, bytes) and len(res) == 0
 
 
-@pytest.mark.parametrize(
-    "cls,buffer_cls",
-    [
-        (Signature, (memoryview, bytearray)),
-        (Delta, (memoryview, bytearray)),
-        (Patch, (memoryview, bytearray)),
-    ],
-)
-def test_readinto(
-    cls: type[Signature | Delta | Patch],
-    buffer_cls: type[memoryview | bytearray],
-) -> None:
+@pytest.mark.parametrize("cls", [Signature, Delta, Patch])
+def test_readinto(cls: type[Signature | Delta | Patch]) -> None:
     """Test reading a processed stream into a buffer."""
     buffer_size = 10
     data_size = 10 * buffer_size
@@ -338,6 +329,7 @@ def test_readinto(
         get_obj = lambda: _get_patch(basis=data_size, buffer_size=buffer_size)
 
     obj = get_obj()
+    assert obj.readable()
 
     buffer = bytearray()
 
@@ -350,14 +342,14 @@ def test_readinto(
     res = obj.readinto1(memoryview(buffer))
     assert isinstance(res, int) and res == 0
 
-    buffer = bytearray(1) # Zero-init array
+    buffer = bytearray(1)
 
     res = obj.readinto(buffer)
     assert isinstance(res, int) and res == 1 and buffer != bytearray(1)
     res = obj.readinto(memoryview(buffer))
     assert isinstance(res, int) and res == 1 and buffer != bytearray(1)
 
-    buffer = bytearray(3) # Zero-init array
+    buffer = bytearray(3)
 
     res = obj.readinto1(buffer)
     assert isinstance(res, int) and res == 3 and buffer != bytearray(3)
@@ -365,17 +357,16 @@ def test_readinto(
     assert isinstance(res, int) and res == 3 and buffer != bytearray(3)
 
     buffer = bytearray(data_size)
+
     obj = get_obj()
     res = obj.readinto1(buffer)
-    assert isinstance(res, int) and 0 < res <= buffer_size
+    assert isinstance(res, int) and res > 0
     assert buffer != bytearray(data_size)
 
-    # for arg in (None, -1, -2):  # < -1 should be treated as -1
-    #     obj = get_obj()
-    #     res = obj.read(arg)
-    #     assert isinstance(res, bytes) and len(res) > 0
-    #     res = obj.read(arg)
-    #     assert isinstance(res, bytes) and len(res) == 0
+    obj = get_obj()
+    res = obj.readinto(buffer)
+    assert isinstance(res, int) and res > 0
+    assert buffer != bytearray(data_size)
 
 
 # @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
@@ -433,3 +424,67 @@ def test_readinto(
 #         assert len(obj.read(arg)) <= data_size
 #         assert len(obj.read(arg)) == 0
 #         assert len(obj.read1(arg)) == 0
+
+
+def test_full() -> None:
+    orig = ((b"123" * 256) + b"4") * 64
+    new = ((b"123" * 256) + b"5") * 48
+
+    buffer_size = 10
+
+    sig = Signature(io.BytesIO(orig), buffer_size=buffer_size)
+    sig_contents = bytearray()
+    sig_contents += sig.read(1)
+    sig_contents += sig.read1(1)
+    sig_contents += sig.read(10)
+    sig_contents += sig.read1(10)
+    sig_contents += bytearray(100)
+    sig.readinto(
+        memoryview(sig_contents)[len(sig_contents) - 100 : len(sig_contents) - 10]
+    )
+    sig.readinto1(memoryview(sig_contents)[len(sig_contents) - 10 :])
+    sig_contents += sig.read1(100)
+    sig_contents += sig.read(100)
+    sig_contents += sig.read1()
+    sig_contents += sig.read()
+
+    delta = Delta(io.BytesIO(sig_contents), io.BytesIO(new), buffer_size=buffer_size)
+    delta.load_signature(10)
+    delta.load_signature1(10)
+    delta.load_signature(10)
+    delta.load_signature(1)
+    delta.load_signature1(11)
+    delta.load_signature1()
+    delta.load_signature()
+    delta_contents = bytearray()
+    delta_contents += delta.read(1)
+    delta_contents += delta.read1(1)
+    delta_contents += delta.read(10)
+    delta_contents += delta.read1(10)
+    delta_contents += bytearray(100)
+    delta.readinto(
+        memoryview(delta_contents)[len(delta_contents) - 100 : len(delta_contents) - 10]
+    )
+    delta.readinto1(memoryview(delta_contents)[len(delta_contents) - 10 :])
+    delta_contents += delta.read1(100)
+    delta_contents += delta.read(100)
+    delta_contents += delta.read1()
+    delta_contents += delta.read()
+
+    patch = Patch(io.BytesIO(orig), io.BytesIO(delta_contents), buffer_size=buffer_size)
+    patched_orig = bytearray()
+    patched_orig += patch.read(1)
+    patched_orig += patch.read1(1)
+    patched_orig += patch.read(10)
+    patched_orig += patch.read1(10)
+    patched_orig += bytearray(100)
+    patch.readinto(
+        memoryview(patched_orig)[len(patched_orig) - 100 : len(patched_orig) - 10]
+    )
+    patch.readinto1(memoryview(patched_orig)[len(patched_orig) - 10 :])
+    patched_orig += patch.read1(100)
+    patched_orig += patch.read(100)
+    patched_orig += patch.read1()
+    patched_orig += patch.read()
+
+    assert new == patched_orig

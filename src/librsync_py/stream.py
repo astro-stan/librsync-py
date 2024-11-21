@@ -146,15 +146,7 @@ class _Job(io.BufferedIOBase):
         with self._rlock:
             self._checkClosed()
             self._check_c_api_freed()
-            if not isinstance(buffer, memoryview):
-                buffer = memoryview(buffer)
-            if buffer.readonly:
-                msg = '"buffer" must be writable'
-                raise ValueError(msg)
-            buffer = buffer.cast("B")
-
-            _, length = self._readinto(buffer, read1=False)
-            return length
+            return self._readinto(buffer, read1=False)
 
     def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:
         """Process and read up to size bytes into a buffer while performing at most 1 read() system call.
@@ -171,15 +163,7 @@ class _Job(io.BufferedIOBase):
         with self._rlock:
             self._checkClosed()
             self._check_c_api_freed()
-            if not isinstance(buffer, memoryview):
-                buffer = memoryview(buffer)
-            if buffer.readonly:
-                msg = '"buffer" must be writable'
-                raise ValueError(msg)
-            buffer = buffer.cast("B")
-
-            _, length = self._readinto(buffer, read1=True)
-            return length
+            return self._readinto(buffer, read1=True)
 
     def close(self: Self) -> None:
         """Close the stream.
@@ -205,6 +189,55 @@ class _Job(io.BufferedIOBase):
             self._free_c_api_resources()
             return raw
 
+    def _readinto(
+        self: Self,
+        buffer: bytearray | memoryview | array,
+        *,
+        read1: bool = False,
+    ) -> int:
+        """Process and read up to len(buffer) bytes into buffer.
+
+        :param buffer: The buffer to read data into.
+        :type buffer: Union[bytearray, memoryview, array]
+        :param read1: Perform at most 1 read() system call.
+        :type read1: bool
+        :returns: The length of the read data
+        :rtype: int
+        :raises RsCApiError: If something goes wrong during the read
+        :raises ValueError: If input param validation fails
+        """
+        if not isinstance(buffer, memoryview):
+            buffer = memoryview(buffer)
+        if buffer.readonly:
+            msg = '"buffer" must be writable'
+            raise ValueError(msg)
+        buffer = buffer.cast("B")
+
+        # Slow route - read data from the stream and process it
+        if len(self._buf) < len(buffer):
+            chunks = [self._buf]
+            total_length = len(self._buf)
+
+            # Chunk output buffer
+            chunk_buffer = bytearray(max(self.buffer_size, len(buffer)))
+
+            result = RsResult.BLOCKED
+            with memoryview(chunk_buffer) as mv:
+                while result == RsResult.BLOCKED:
+                    result, written = self._process_raw(mv, read1=read1)
+                    chunks.append(mv[:written].tobytes())
+                    total_length += written
+                    if total_length >= len(buffer) or read1:
+                        break
+
+            # Join all chunks at once
+            self._buf = bytearray().join(chunks)
+
+        out_len = min(len(buffer), len(self._buf))
+        buffer[:out_len] = self._buf[:out_len]
+        self._buf = self._buf[out_len:]
+        return out_len
+
     def _read(
         self: Self,
         size: int | None = -1,
@@ -228,30 +261,25 @@ class _Job(io.BufferedIOBase):
         if size == 0:
             return b""
 
-        # Fast route - return processed and cached data from the buffer
-        if len(self._buf) >= size and size >= 0:
-            out = self._buf[:size]
-            self._buf = self._buf[size:]
-            return bytes(out)
-
         # Slow route - read data from the stream and process it
-        chunks = [self._buf]
-        total_length = len(self._buf)
+        if len(self._buf) < size or size < 0:
+            chunks = [self._buf]
+            total_length = len(self._buf)
 
-        # Chunk output buffer
-        chunk_buffer = bytearray(max(self.buffer_size, size))
+            # Chunk output buffer
+            chunk_buffer = bytearray(max(self.buffer_size, size))
 
-        result = RsResult.BLOCKED
-        with memoryview(chunk_buffer) as mv:
-            while result == RsResult.BLOCKED:
-                result, written = self._readinto(mv, read1=read1)
-                chunks.append(mv[:written].tobytes())
-                total_length += written
-                if (total_length >= size and size >= 0) or read1:
-                    break
+            result = RsResult.BLOCKED
+            with memoryview(chunk_buffer) as mv:
+                while result == RsResult.BLOCKED:
+                    result, written = self._process_raw(mv, read1=read1)
+                    chunks.append(mv[:written].tobytes())
+                    total_length += written
+                    if (total_length >= size and size >= 0) or read1:
+                        break
 
-        # Join all chunks at once
-        self._buf = bytearray().join(chunks)
+            # Join all chunks at once
+            self._buf = bytearray().join(chunks)
 
         if size < 0:
             size = len(self._buf)
@@ -261,13 +289,69 @@ class _Job(io.BufferedIOBase):
         self._buf = self._buf[size:]
         return bytes(out)
 
-    def _readinto(
+    # def _read(
+    #     self: Self,
+    #     size: int | None = -1,
+    #     *,
+    #     read1: bool = False,
+    # ) -> bytes:
+    #     """Process and read up to size bytes from the stream.
+
+    #     :param size: The max amount of bytes to read. Use -1 to read until EOF
+    #     :type size: Optional[int]
+    #     :param read1: Perform at most 1 read() system call.
+    #     :type read1: bool
+    #     :returns: The read data
+    #     :rtype: bytes
+    #     :raises RsCApiError: If something goes wrong during the read
+    #     :raises ValueError: If input param validation fails
+    #     """
+    #     if size is None or size < -1:
+    #         size = -1
+
+    #     if size == 0:
+    #         return b""
+
+    #     # Fast route - return processed and cached data from the buffer
+    #     if len(self._buf) >= size and size >= 0:
+    #         out = self._buf[:size]
+    #         self._buf = self._buf[size:]
+    #         return bytes(out)
+
+    #     # Slow route - read data from the stream and process it
+    #     chunks = [self._buf]
+    #     total_length = len(self._buf)
+
+    #     # Chunk output buffer
+    #     chunk_buffer = bytearray(max(self.buffer_size, size))
+
+    #     result = RsResult.BLOCKED
+    #     with memoryview(chunk_buffer) as mv:
+    #         while result == RsResult.BLOCKED:
+    #             result, written = self._process_raw(mv, read1=read1)
+    #             chunks.append(mv[:written].tobytes())
+    #             total_length += written
+    #             if (total_length >= size and size >= 0) or read1:
+    #                 break
+
+    #     # Join all chunks at once
+    #     self._buf = bytearray().join(chunks)
+
+    #     if size < 0:
+    #         size = len(self._buf)
+
+    #     # Take data from the buffer and return it
+    #     out = self._buf[:size]
+    #     self._buf = self._buf[size:]
+    #     return bytes(out)
+
+    def _process_raw(
         self: Self,
         buf: memoryview,
         *,
         read1: bool = False,
     ) -> tuple[RsResult, int]:
-        """Process and read from the stream into a buffer.
+        """Process and read from the raw stream into a buffer.
 
         :param buf: The buffer to store the read data into
         :type buf: memoryview
