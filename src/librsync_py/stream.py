@@ -412,7 +412,7 @@ class _Job(io.BufferedIOBase):
     def _check_c_api_freed(self: Self) -> None:
         """Raise ValueError if the C API resources have been freed."""
         if not self._job:
-            msg = "I/O operation on a freed librsync job"
+            msg = "I/O operation on a freed librsync job."
             raise ValueError(msg)
 
     @property
@@ -767,13 +767,13 @@ class Delta(_Job):
     def _check_signature_c_api_freed(self: Self) -> None:
         """Raise ValueError if the signature C API resources have been freed."""
         if not self._sig:
-            msg = "I/O operation on a freed librsync signature"
+            msg = "I/O operation on a freed librsync signature."
             raise ValueError(msg)
 
     def _check_signature_job_c_api_freed(self: Self) -> None:
         """Raise ValueError if the signature job C API resources have been freed."""
         if not self._sig_job:
-            msg = "I/O operation on a freed librsync job"
+            msg = "I/O operation on a freed librsync job."
             raise ValueError(msg)
 
     @property

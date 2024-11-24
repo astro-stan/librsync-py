@@ -65,7 +65,7 @@ def _get_patch(
     basis: bytes | int | None = None,
     delta: Delta | None = None,
     buffer_size: int = io.DEFAULT_BUFFER_SIZE,
-) -> Delta:
+) -> Patch:
     """Get a patch object.
 
     :param basis: The patch basis. None for `b"0" * 10 * buffer_size`
@@ -364,6 +364,118 @@ def test_readinto(cls: type[Signature | Delta | Patch]) -> None:
     res = obj.readinto(buffer)
     assert isinstance(res, int) and res > 0
     assert buffer != bytearray(data_size)
+
+
+def test_signature_close() -> None:
+    """Test closing a signature stream."""
+    obj = _get_signature()
+    obj.close()
+    assert obj.raw.closed
+    assert obj._job is None
+
+    with pytest.raises(ValueError, match="I/O operation on closed file."):
+        obj.read()
+    with pytest.raises(ValueError, match="I/O operation on closed file."):
+        obj.read1()
+    with pytest.raises(ValueError, match="I/O operation on closed file."):
+        obj.readinto(bytearray())
+    with pytest.raises(ValueError, match="I/O operation on closed file."):
+        obj.readinto1(bytearray())
+
+
+def test_delta_close() -> None:
+    """Test closing a delta stream."""
+    obj = _get_delta()
+    obj.load_signature()
+
+    obj.close_signature()
+    assert obj.raw_signature.closed
+    assert obj._sig is not None
+    assert obj._sig_job is None
+
+    obj.close()
+    assert obj.raw.closed
+    assert obj._job is None
+    assert obj._sig is None
+
+    obj = _get_delta()
+    obj.close_signature()
+
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.load_signature()
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.load_signature1()
+
+    obj = _get_delta()
+    obj.close()
+
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.load_signature()
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.load_signature1()
+
+    obj = _get_delta()
+    obj.load_signature()
+    obj.close()
+
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.read()
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.read1()
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.readinto(bytearray())
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.readinto1(bytearray())
+
+
+def test_patch_close() -> None:
+    """Test closing a patch stream."""
+    obj = _get_patch()
+
+    obj.close_basis()
+    assert obj.raw_basis.closed
+    assert obj._job is None
+
+    obj.close()
+    assert obj.raw.closed
+    assert obj._job is None  # Should still be None
+
+    obj = _get_patch()
+    obj.close_basis()
+
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.read()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.read1()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readinto(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readinto1(bytearray())
+
+    obj = _get_patch()
+    obj.close()
+
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.read()
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.read1()
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.readinto(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.readinto1(bytearray())
+
 
 # @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 # def test_reading(cls: type[Signature | Delta | Patch]) -> None:
