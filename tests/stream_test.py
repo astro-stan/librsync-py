@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import re
+from codecs import ascii_encode
 
 import pytest
 
@@ -371,6 +372,7 @@ def test_signature_close() -> None:
     obj = _get_signature()
     obj.close()
     assert obj.raw.closed
+    assert obj.closed
     assert obj._job is None
 
     with pytest.raises(ValueError, match="I/O operation on closed file."):
@@ -390,16 +392,22 @@ def test_delta_close() -> None:
 
     obj.close_signature()
     assert obj.raw_signature.closed
+    assert obj.signature_closed
+    assert not obj.closed
     assert obj._sig is not None
     assert obj._sig_job is None
 
     obj.close()
     assert obj.raw.closed
+    assert obj.signature_closed
+    assert obj.closed
     assert obj._job is None
     assert obj._sig is None
 
     obj = _get_delta()
     obj.close_signature()
+    assert obj.signature_closed
+    assert not obj.closed
 
     with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.load_signature()
@@ -408,6 +416,8 @@ def test_delta_close() -> None:
 
     obj = _get_delta()
     obj.close()
+    assert not obj.signature_closed
+    assert obj.closed
 
     with pytest.raises(
         ValueError, match=r"I/O operation on a freed librsync signature."
@@ -421,6 +431,8 @@ def test_delta_close() -> None:
     obj = _get_delta()
     obj.load_signature()
     obj.close()
+    assert not obj.signature_closed
+    assert obj.closed
 
     with pytest.raises(
         ValueError, match=r"I/O operation on a freed librsync signature."
@@ -446,14 +458,20 @@ def test_patch_close() -> None:
 
     obj.close_basis()
     assert obj.raw_basis.closed
+    assert obj.basis_closed
+    assert not obj.closed
     assert obj._job is None
 
     obj.close()
     assert obj.raw.closed
-    assert obj._job is None  # Should still be None
+    assert obj.basis_closed
+    assert obj.closed
+    assert obj._job is None
 
     obj = _get_patch()
     obj.close_basis()
+    assert obj.basis_closed
+    assert not obj.closed
 
     with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
         obj.read()
@@ -466,6 +484,8 @@ def test_patch_close() -> None:
 
     obj = _get_patch()
     obj.close()
+    assert not obj.basis_closed
+    assert obj.closed
 
     with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.read()
