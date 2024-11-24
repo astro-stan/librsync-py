@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import io
 import re
-from codecs import ascii_encode
 
 import pytest
 
@@ -375,13 +374,13 @@ def test_signature_close() -> None:
     assert obj.closed
     assert obj._job is None
 
-    with pytest.raises(ValueError, match="I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.read()
-    with pytest.raises(ValueError, match="I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.read1()
-    with pytest.raises(ValueError, match="I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.readinto(bytearray())
-    with pytest.raises(ValueError, match="I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.readinto1(bytearray())
 
 
@@ -395,6 +394,7 @@ def test_delta_close() -> None:
     assert obj.signature_closed
     assert not obj.closed
     assert obj._sig is not None
+    assert obj._job is not None
     assert obj._sig_job is None
 
     obj.close()
@@ -494,6 +494,130 @@ def test_patch_close() -> None:
     with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.readinto(bytearray())
     with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.readinto1(bytearray())
+
+
+def test_signature_detach() -> None:
+    """Test detaching a signature stream."""
+    obj = _get_signature()
+    obj.detach()
+    assert obj.raw is None
+    assert obj._job is None
+
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.read()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.read1()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readinto(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readinto1(bytearray())
+
+
+def test_delta_detach() -> None:
+    """Test detaching a delta stream."""
+    obj = _get_delta()
+    obj.load_signature()
+
+    obj.detach_signature()
+    assert obj.raw_signature is None
+    assert obj.raw is not None
+    assert obj._sig is not None
+    assert obj._job is not None
+    assert obj._sig_job is None
+
+    obj.detach()
+    assert obj.raw is None
+    assert obj._job is None
+    assert obj._sig is None
+
+    obj = _get_delta()
+    obj.detach_signature()
+    assert obj.raw_signature is None
+    assert obj.raw is not None
+
+    with pytest.raises(AttributeError):
+        obj.load_signature()
+    with pytest.raises(AttributeError):
+        obj.load_signature1()
+
+    obj = _get_delta()
+    obj.detach()
+    assert obj.raw_signature is not None
+    assert obj.raw is None
+
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.load_signature()
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.load_signature1()
+
+    obj = _get_delta()
+    obj.load_signature()
+    obj.detach()
+    assert obj.raw_signature is not None
+    assert obj.raw is None
+
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.read()
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.read1()
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.readinto(bytearray())
+    with pytest.raises(
+        ValueError, match=r"I/O operation on a freed librsync signature."
+    ):
+        obj.readinto1(bytearray())
+
+
+def test_patch_detach() -> None:
+    """Test detaching a patch stream."""
+    obj = _get_patch()
+
+    obj.detach_basis()
+    assert obj.raw_basis is None
+    assert obj.raw is not None
+    assert obj._job is None
+
+    obj.detach()
+    assert obj.raw is None
+    assert obj._job is None
+
+    obj = _get_patch()
+    obj.detach_basis()
+    assert obj.raw_basis is None
+    assert obj.raw is not None
+
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.read()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.read1()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readinto(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readinto1(bytearray())
+
+    obj = _get_patch()
+    obj.detach()
+    assert obj.raw is None
+    assert obj._job is None
+
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.read()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.read1()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readinto(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
         obj.readinto1(bytearray())
 
 
