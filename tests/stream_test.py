@@ -637,6 +637,44 @@ def test_patch_detach() -> None:
         obj.readable()
 
 
+def test_signature_context_manager_api() -> None:
+    """Test signature context manager API."""
+    with _get_signature() as obj:
+        assert not obj.closed
+        assert obj._job is not None
+
+    assert obj.closed
+    assert obj._job is None
+
+
+def test_delta_context_manager_api() -> None:
+    """Test delta context manager API."""
+    with _get_delta() as obj:
+        assert not obj.closed
+        assert not obj.signature_closed
+        assert obj._job is not None
+        assert obj._sig is not None
+        assert obj._sig_job is not None
+
+    assert obj.closed
+    assert obj.signature_closed
+    assert obj._job is None
+    assert obj._sig is None
+    assert obj._sig_job is None
+
+
+def test_patch_context_manager_api() -> None:
+    """Test patch context manager API."""
+    with _get_patch() as obj:
+        assert not obj.closed
+        assert not obj.basis_closed
+        assert obj._job is not None
+
+    assert obj.closed
+    assert obj.basis_closed
+    assert obj._job is None
+
+
 # @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 # def test_reading(cls: type[Signature | Delta | Patch]) -> None:
 #     """Test stream reading."""
