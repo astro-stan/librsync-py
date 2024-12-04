@@ -107,14 +107,17 @@ class JobStats:
     """The time the job completed. None if the job has not completed yet."""
 
     @property
-    def time_taken(self) -> float:
+    def time_taken(self) -> int:
         """The amount of time taken to complete the job (in seconds).
 
         If the job has not completed yet, the time taken up to this point is
         returned.
+
+        Due to C API limitations, the time will be rounded down to the last full
+        second.
         """
         completion_time = self.completion_time or datetime.now(timezone.utc)
-        return (completion_time - self.start_time).total_seconds()
+        return int((completion_time - self.start_time).total_seconds())
 
     @property
     def in_speed(self) -> float:
