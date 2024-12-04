@@ -382,6 +382,8 @@ def test_signature_close() -> None:
         obj.readinto(bytearray())
     with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.readinto1(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.readable()
 
 
 def test_delta_close() -> None:
@@ -450,6 +452,8 @@ def test_delta_close() -> None:
         ValueError, match=r"I/O operation on a freed librsync signature."
     ):
         obj.readinto1(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.readable()
 
 
 def test_patch_close() -> None:
@@ -481,6 +485,8 @@ def test_patch_close() -> None:
         obj.readinto(bytearray())
     with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
         obj.readinto1(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readable()
 
     obj = _get_patch()
     obj.close()
@@ -495,6 +501,8 @@ def test_patch_close() -> None:
         obj.readinto(bytearray())
     with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.readinto1(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+        obj.readable()
 
 
 def test_signature_detach() -> None:
@@ -512,6 +520,8 @@ def test_signature_detach() -> None:
         obj.readinto(bytearray())
     with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
         obj.readinto1(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readable()
 
 
 def test_delta_detach() -> None:
@@ -577,6 +587,8 @@ def test_delta_detach() -> None:
         ValueError, match=r"I/O operation on a freed librsync signature."
     ):
         obj.readinto1(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readable()
 
 
 def test_patch_detach() -> None:
@@ -605,6 +617,8 @@ def test_patch_detach() -> None:
         obj.readinto(bytearray())
     with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
         obj.readinto1(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readable()
 
     obj = _get_patch()
     obj.detach()
@@ -619,6 +633,8 @@ def test_patch_detach() -> None:
         obj.readinto(bytearray())
     with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
         obj.readinto1(bytearray())
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.readable()
 
 
 # @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
