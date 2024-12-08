@@ -226,7 +226,8 @@ def test_delta_init_args() -> None:
     sig_stream = io.BytesIO(b"")
     basis_stream = io.BytesIO(b"")
     d = Delta(sig_stream, basis_stream)
-    assert d._job is not None  # noqa: SLF001
+    # Job should not be created until the signature is loaded
+    assert d._job is None  # noqa: SLF001
     assert d._sig_job is not None  # noqa: SLF001
     assert d._sig is not None  # noqa: SLF001
     assert d.raw_signature is sig_stream
@@ -655,6 +656,15 @@ def test_delta_context_manager_api() -> None:
     with _get_delta() as obj:
         assert not obj.closed
         assert not obj.signature_closed
+        # job should not be created until signature is loaded
+        assert obj._job is None
+        assert obj._sig is not None
+        assert obj._sig_job is not None
+
+    with _get_delta() as obj:
+        obj.load_signature()
+        assert not obj.closed
+        assert not obj.signature_closed
         assert obj._job is not None
         assert obj._sig is not None
         assert obj._sig_job is not None
@@ -697,28 +707,30 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
     # ensure the time taken is > 0
     sleep(1)
 
-    assert isinstance(obj.job_stats, JobStats)
-    assert obj.job_stats.job_type == job_type
-    assert obj.job_stats.lit_cmds == 0
-    assert obj.job_stats.lit_bytes == 0
-    assert obj.job_stats.lit_cmdbytes == 0
-    assert obj.job_stats.copy_cmds == 0
-    assert obj.job_stats.copy_bytes == 0
-    assert obj.job_stats.copy_cmdbytes == 0
-    assert obj.job_stats.sig_cmds == 0
-    assert obj.job_stats.sig_bytes == 0
-    assert obj.job_stats.false_matches == 0
-    assert obj.job_stats.sig_blocks == 0
-    assert obj.job_stats.block_len == 0
-    assert obj.job_stats.in_bytes == 0
-    assert obj.job_stats.out_bytes == 0
-    assert isinstance(obj.job_stats.start_time, datetime)
-    assert obj.job_stats.completion_time is None
-    # Time taken is measured as the difference between time now and start time
-    # rounded down to the last full second
-    assert obj.job_stats.time_taken == 1
-    assert obj.job_stats.in_speed == 0
-    assert obj.job_stats.out_speed == 0
+    # Delta job is not loaded until signature is loaded
+    if cls is not Delta:
+        assert isinstance(obj.job_stats, JobStats)
+        assert obj.job_stats.job_type == job_type
+        assert obj.job_stats.lit_cmds == 0
+        assert obj.job_stats.lit_bytes == 0
+        assert obj.job_stats.lit_cmdbytes == 0
+        assert obj.job_stats.copy_cmds == 0
+        assert obj.job_stats.copy_bytes == 0
+        assert obj.job_stats.copy_cmdbytes == 0
+        assert obj.job_stats.sig_cmds == 0
+        assert obj.job_stats.sig_bytes == 0
+        assert obj.job_stats.false_matches == 0
+        assert obj.job_stats.sig_blocks == 0
+        assert obj.job_stats.block_len == 0
+        assert obj.job_stats.in_bytes == 0
+        assert obj.job_stats.out_bytes == 0
+        assert isinstance(obj.job_stats.start_time, datetime)
+        assert obj.job_stats.completion_time is None
+        # Time taken is measured as the difference between time now and start time
+        # rounded down to the last full second
+        assert obj.job_stats.time_taken == 1
+        assert obj.job_stats.in_speed == 0
+        assert obj.job_stats.out_speed == 0
 
     if cls is Delta:
         assert isinstance(obj.signature_job_stats, JobStats)
@@ -769,7 +781,8 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
         assert isinstance(obj.signature_job_stats.completion_time, datetime)
         assert obj.signature_job_stats.time_taken == 1
         assert (
-            obj.signature_job_stats.in_speed == in_len / obj.signature_job_stats.time_taken
+            obj.signature_job_stats.in_speed
+            == in_len / obj.signature_job_stats.time_taken
         )
         assert obj.signature_job_stats.out_speed == 0
 
@@ -807,23 +820,86 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
     assert obj.job_stats.out_bytes == out_len
     assert isinstance(obj.job_stats.start_time, datetime)
     assert isinstance(obj.job_stats.completion_time, datetime)
-    assert obj.job_stats.time_taken == 2
+    if cls is Delta:
+        # Job doesn't get created until after signature is loaded
+        assert obj.job_stats.time_taken == 1
+    else:
+        assert obj.job_stats.time_taken == 2
     assert obj.job_stats.in_speed == in_len / obj.job_stats.time_taken
     assert obj.job_stats.out_speed == out_len / obj.job_stats.time_taken
 
     obj.close()
-    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
-        obj.job_stats
 
     if cls is Delta:
+        with pytest.raises(
+            ValueError, match=r"I/O operation on a freed librsync signature."
+        ):
+            obj.job_stats
         obj.close_signature()
         with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
             obj.signature_job_stats
+    else:
+        with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+            obj.job_stats
 
-    # TODO:
-    # - delta match stats
-    # - patch basis in/out byte stats?
+def test_delta_match_stats() -> None:
+    """Test delta job match statistics."""
+    text_orig = bytearray(b"123" * 1024 * 100)
+    text_new = text_orig
 
+    text_orig = b"666" * 100 + text_orig
+    text_new += b"999" * 123
+
+    obj = _get_delta(Signature(io.BytesIO(text_orig)), text_new)
+
+    with pytest.raises(ValueError, match=r"Invalid signature magic."):
+        obj.match_stats
+
+    obj.load_signature()
+
+    assert obj.match_stats.find_count == 0
+    assert obj.match_stats.match_count == 0
+    assert obj.match_stats.hashcmp_count == 0
+    assert obj.match_stats.entrycmp_count == 0
+    assert obj.match_stats.strongsum_calc_count == 0
+    assert obj.match_stats.weaksumcmp_count == 0
+    assert obj.match_stats.strongsumcmp_count == 0
+    assert obj.match_stats.weaksumcmp_ratio == 0
+    assert obj.match_stats.entrycmp_ratio == 0
+    assert obj.match_stats.strongsumcmp_ratio == 0
+    assert obj.match_stats.match_ratio == 0
+    assert obj.match_stats.strongsum_calc_ratio == 0
+
+    obj.read()
+
+    # Derefecene struct
+    sig = obj._sig[0][0]
+
+    assert obj.match_stats.find_count == sig.hashtable.find_count
+    assert obj.match_stats.match_count == sig.hashtable.match_count
+    assert obj.match_stats.hashcmp_count == sig.hashtable.hashcmp_count
+    assert obj.match_stats.entrycmp_count == sig.hashtable.entrycmp_count
+    assert obj.match_stats.strongsum_calc_count == sig.calc_strong_count
+    assert obj.match_stats.weaksumcmp_count == obj.match_stats.hashcmp_count
+    assert obj.match_stats.strongsumcmp_count == obj.match_stats.entrycmp_count
+    assert (
+        obj.match_stats.hashcmp_ratio
+        == obj.match_stats.hashcmp_count / obj.match_stats.find_count
+    )
+    assert obj.match_stats.weaksumcmp_ratio == obj.match_stats.hashcmp_ratio
+    assert (
+        obj.match_stats.entrycmp_ratio
+        == obj.match_stats.entrycmp_count / obj.match_stats.find_count
+    )
+    assert obj.match_stats.strongsumcmp_ratio == obj.match_stats.entrycmp_ratio
+    assert (
+        obj.match_stats.match_ratio
+        == obj.match_stats.match_count / obj.match_stats.find_count
+    )
+    assert (
+        obj.match_stats.strongsum_calc_ratio
+        == obj.match_stats.strongsum_calc_count / obj.match_stats.find_count
+    )
 
 # @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 # def test_reading(cls: type[Signature | Delta | Patch]) -> None:

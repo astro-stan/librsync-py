@@ -566,7 +566,10 @@ class Delta(_Job):
         self._sig_in_bytes = 0
 
         super().__init__(
-            job=delta_begin(self._sig),
+            # The delta job must be created after the loadsig job has completed
+            # and the signature hashtable has been generated
+            # see :meth:_load_signature
+            job=None,
             raw=basis_raw,
             buffer_size=buffer_size,
         )
@@ -732,6 +735,8 @@ class Delta(_Job):
 
         if result == RsResult.DONE:
             build_hash_table(self._sig)  # Index the signature
+            # Create the delta job
+            self._job = delta_begin(self._sig)
             self._sig_loaded = True
 
         return total_read
@@ -807,6 +812,12 @@ class Delta(_Job):
         """Check if signature stream is closed."""
         with self._rlock:
             return self.raw_signature.closed
+
+    @property
+    def job_stats(self: Self) -> JobStats:
+        with self._rlock:
+            self._check_signature_loaded()
+            return super().job_stats
 
     @property
     def signature_job_stats(self: Self) -> JobStats:
