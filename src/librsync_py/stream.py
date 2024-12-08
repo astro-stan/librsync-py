@@ -462,12 +462,12 @@ class _Job(io.BufferedIOBase):
 
     def __getstate__(self: Self) -> dict:
         """Pickle object."""
-        msg = f"cannot pickle {self.__class__.__name__!r} object"
+        msg = f"Cannot pickle {self.__class__.__name__!r} object"
         raise TypeError(msg)
 
     def __setstate__(self: Self, obj: Any) -> dict:  # noqa: ANN401
         """Unpickle object."""
-        msg = f"cannot unpickle {self.__class__.__name__!r} object"
+        msg = f"Cannot unpickle {self.__class__.__name__!r} object"
         raise TypeError(msg)
 
     def __repr__(self: Self) -> str:
@@ -696,7 +696,7 @@ class Delta(_Job):
             return 0
 
         chunk_size = max(size, self.buffer_size)
-        if chunk_size < 1:
+        if chunk_size < 1:  # pragma: no cover
             return 0
 
         output = bytearray()  # loading signatures produces no output
@@ -720,8 +720,8 @@ class Delta(_Job):
                         eof=len(in_mv) == 0,
                     )
 
-                if read == 0 and len(self._sig_buf):
-                    # No data was consimed but there is data in the buffer
+                if read == 0 and len(self._sig_buf):  # pragma: no cover
+                    # No data was consumed but there is data in the buffer
                     msg = (
                         "Infinite loop detected. Signature load job consumed "
                         "no input and did not complete."

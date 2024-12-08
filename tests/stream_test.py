@@ -246,11 +246,55 @@ def test_patch_init_args() -> None:
     assert p.raw_basis is basis_stream
 
 
+@pytest.mark.parametrize("cls", [Signature, Delta, Patch])
+def test_pickling_not_supported(cls: type[Signature | Delta | Patch]) -> None:
+    """Test picking and unpickling the streams is not supported."""
+    if cls is Signature:
+        obj = _get_signature()
+    elif cls is Delta:
+        obj = _get_delta()
+    else:
+        obj = _get_patch()
+
+    with pytest.raises(TypeError, match=r"Cannot pickle.*object"):
+        obj.__getstate__()
+    with pytest.raises(TypeError, match=r"Cannot unpickle.*object"):
+        obj.__setstate__(dict())
+
+
+@pytest.mark.parametrize("cls", [Signature, Delta, Patch])
+def test_repr(cls: type[Signature | Delta | Patch]) -> None:
+    """Test picking and unpickling the streams is not supported."""
+    if cls is Signature:
+        obj = _get_signature()
+    elif cls is Delta:
+        obj = _get_delta()
+    else:
+        obj = _get_patch()
+
+    assert f"{obj!r}"
+
+
 def test_delta_load_signature() -> None:
     """Test loading a signature stream."""
     buffer_size = 10
     data_size = 10 * buffer_size
     obj = _get_delta(basis=data_size, buffer_size=buffer_size)
+
+    assert not obj.signature_loaded
+
+    msg = r"Signature not loaded. Did you forget to call `.load_signature()`?"
+    with pytest.raises(ValueError, match=msg):
+        obj.read()
+    with pytest.raises(ValueError, match=msg):
+        obj.read1()
+    with pytest.raises(ValueError, match=msg):
+        obj.readinto(bytearray(100))
+    with pytest.raises(ValueError, match=msg):
+        obj.readinto1(bytearray(100))
+    with pytest.raises(ValueError, match=msg):
+        # Delta job is not created until the signature is fully loaded
+        obj.job_stats
 
     res = obj.load_signature(0)
     assert isinstance(res, int) and res == 0
@@ -262,14 +306,27 @@ def test_delta_load_signature() -> None:
     assert isinstance(res, int) and res == 2
     for arg in (None, -1, -2):  # < -1 should be treated as -1
         obj = _get_delta(basis=data_size, buffer_size=buffer_size)
-        res = obj.load_signature1(arg)
-        assert isinstance(res, int) and res == buffer_size
-    for arg in (None, -1, -2):  # < -1 should be treated as -1
-        obj = _get_delta(basis=data_size, buffer_size=buffer_size)
+        assert not obj.signature_loaded
         res = obj.load_signature(arg)
         assert isinstance(res, int) and res > 0
+        assert obj.signature_loaded
+
         res = obj.load_signature(arg)
         assert isinstance(res, int) and res == 0
+        assert obj.signature_loaded
+
+    for arg in (None, -1, -2):  # < -1 should be treated as -1
+        obj = _get_delta(basis=data_size, buffer_size=buffer_size)
+        assert not obj.signature_loaded
+        res = obj.load_signature1(arg)
+        assert isinstance(res, int) and res == buffer_size
+
+        obj.load_signature(arg)
+        assert obj.signature_loaded
+
+        res = obj.load_signature1(arg)
+        assert isinstance(res, int) and res == 0
+        assert obj.signature_loaded
 
 
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
@@ -331,6 +388,12 @@ def test_readinto(cls: type[Signature | Delta | Patch]) -> None:
 
     obj = get_obj()
     assert obj.readable()
+
+    msg = r'"buffer" must be writable'
+    with pytest.raises(ValueError, match=msg):
+        obj.readinto(bytes())
+    with pytest.raises(ValueError, match=msg):
+        obj.readinto1(bytes())
 
     buffer = bytearray()
 
@@ -516,6 +579,9 @@ def test_signature_detach() -> None:
     assert obj.raw is None
     assert obj._job is None
 
+    with pytest.raises(ValueError, match=r"raw stream already detached"):
+        obj.detach()
+
     with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
         obj.read()
     with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
@@ -540,10 +606,16 @@ def test_delta_detach() -> None:
     assert obj._job is not None
     assert obj._sig_job is None
 
+    with pytest.raises(ValueError, match=r"raw_signature stream already detached"):
+        obj.detach_signature()
+
     obj.detach()
     assert obj.raw is None
     assert obj._job is None
     assert obj._sig is None
+
+    with pytest.raises(ValueError, match=r"raw stream already detached"):
+        obj.detach()
 
     obj = _get_delta()
     obj.detach_signature()
@@ -604,9 +676,15 @@ def test_patch_detach() -> None:
     assert obj.raw is not None
     assert obj._job is None
 
+    with pytest.raises(ValueError, match=r"raw_basis stream already detached"):
+        obj.detach_basis()
+
     obj.detach()
     assert obj.raw is None
     assert obj._job is None
+
+    with pytest.raises(ValueError, match=r"raw stream already detached"):
+        obj.detach()
 
     obj = _get_patch()
     obj.detach_basis()
@@ -842,6 +920,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
         with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
             obj.job_stats
 
+
 def test_delta_match_stats() -> None:
     """Test delta job match statistics."""
     text_orig = bytearray(b"123" * 1024 * 100)
@@ -900,6 +979,7 @@ def test_delta_match_stats() -> None:
         obj.match_stats.strongsum_calc_ratio
         == obj.match_stats.strongsum_calc_count / obj.match_stats.find_count
     )
+
 
 # @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 # def test_reading(cls: type[Signature | Delta | Patch]) -> None:
