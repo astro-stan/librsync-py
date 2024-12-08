@@ -721,7 +721,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
     assert obj.job_stats.out_speed == 0
 
     if cls is Delta:
-        assert isinstance(obj.job_stats, JobStats)
+        assert isinstance(obj.signature_job_stats, JobStats)
         assert obj.signature_job_stats.job_type == JobStats.JobType.LOAD_SIGNATURE
         assert obj.signature_job_stats.lit_cmds == 0
         assert obj.signature_job_stats.lit_bytes == 0
