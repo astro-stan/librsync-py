@@ -934,11 +934,22 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     return p_job_handle
 
 
-def get_job_stats(p_job_handle: CTypesData) -> JobStats:
+def get_job_stats(
+    p_job_handle: CTypesData,
+    in_bytes: int,
+    out_bytes: int,
+) -> JobStats:
     """Get librsync job statistics.
+
+    The in and out bytes are needed due to a C API limitation, where those
+    statistics are not updated when not using whole API.
 
     :param p_job_handle: The job handle
     :type p_job_handle: CTypesData
+    :param in_bytes: The total input bytes. Must be >= 0.
+    :type in_bytes: int
+    :param out_bytes: The total output bytes. Must be >= 0.
+    :type out_bytes: int
     :returns: The job statistics
     :rtype: JobStats
     """
@@ -951,6 +962,12 @@ def get_job_stats(p_job_handle: CTypesData) -> JobStats:
         job_type = job_type[: job_type.index(b"\x00")].decode()
     else:
         job_type = ""
+
+    msg = "{} must be >= 0"
+    if in_bytes < 0:
+        raise ValueError(msg.format("in_bytes"))
+    if out_bytes < 0:
+        raise ValueError(msg.format("out_bytes"))
 
     return JobStats(
         job_type=JobStats.JobType(job_type),
@@ -965,8 +982,8 @@ def get_job_stats(p_job_handle: CTypesData) -> JobStats:
         false_matches=raw_stats.false_matches,
         sig_blocks=raw_stats.sig_blocks,
         block_len=raw_stats.block_len,
-        in_bytes=raw_stats.in_bytes,
-        out_bytes=raw_stats.out_bytes,
+        in_bytes=in_bytes,
+        out_bytes=out_bytes,
         start_time=datetime.fromtimestamp(raw_stats.start, timezone.utc),
         completion_time=(
             datetime.fromtimestamp(raw_stats.end, timezone.utc)

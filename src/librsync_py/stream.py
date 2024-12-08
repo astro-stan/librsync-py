@@ -80,6 +80,10 @@ class _Job(io.BufferedIOBase):
         self._raw = raw
         self._job = job
 
+        # Used for statistics
+        self._in_bytes = 0
+        self._out_bytes = 0
+
         # Used to collect leftover unproceesed data read from the raw stream
         self._raw_buf = b""
         # Used to collect processed data
@@ -367,7 +371,10 @@ class _Job(io.BufferedIOBase):
 
         result = RsResult.BLOCKED
         while result == RsResult.BLOCKED and out_cap > 0:
-            self._raw_buf += self.raw.read(max(out_cap - len(self._raw_buf), 0))
+            chunk = self.raw.read(max(out_cap - len(self._raw_buf), 0))
+            self._in_bytes += len(chunk)
+
+            self._raw_buf += chunk
             cap = len(self._raw_buf)
 
             with memoryview(self._raw_buf) as ib:
@@ -385,6 +392,7 @@ class _Job(io.BufferedIOBase):
             if read1:
                 break
 
+        self._out_bytes += out_pos
         return result, out_pos
 
     def _close(self: Self) -> None:
@@ -444,7 +452,7 @@ class _Job(io.BufferedIOBase):
         """Get job statistics."""
         with self._rlock:
             self._check_c_api_freed()
-            return get_job_stats(self._job)
+            return get_job_stats(self._job, self._in_bytes, self._out_bytes)
 
     def __del__(self) -> None:
         """Deallocate the object."""
@@ -553,6 +561,10 @@ class Delta(_Job):
         self._sig_loaded = False
         self._sig_buf = b""
         self._sig, self._sig_job = loadsig_begin()
+
+        # Used for statistics
+        self._sig_in_bytes = 0
+
         super().__init__(
             job=delta_begin(self._sig),
             raw=basis_raw,
@@ -690,9 +702,12 @@ class Delta(_Job):
         with memoryview(output) as out_mv:
             while result == RsResult.BLOCKED:
                 if len(self._sig_buf) < max(self.buffer_size, chunk_size):
-                    self._sig_buf += self._raw_sig.read(
+                    chunk = self._raw_sig.read(
                         max(self.buffer_size, chunk_size) - len(self._sig_buf)
                     )
+                    self._sig_in_bytes += len(chunk)
+
+                    self._sig_buf += chunk
 
                 with memoryview(self._sig_buf) as in_mv:
                     result, read, _ = job_iter(
@@ -718,7 +733,6 @@ class Delta(_Job):
         if result == RsResult.DONE:
             build_hash_table(self._sig)  # Index the signature
             self._sig_loaded = True
-            self._free_signature_job_c_api_resources()
 
         return total_read
 
@@ -793,6 +807,13 @@ class Delta(_Job):
         """Check if signature stream is closed."""
         with self._rlock:
             return self.raw_signature.closed
+
+    @property
+    def signature_job_stats(self: Self) -> JobStats:
+        """Get load signature job statistics."""
+        with self._rlock:
+            self._check_signature_job_c_api_freed()
+            return get_job_stats(self._sig_job, self._sig_in_bytes, 0)
 
     @property
     def match_stats(self: Self) -> MatchStats:

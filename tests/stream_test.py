@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import io
 import re
+from datetime import datetime
+from time import sleep
 
 import pytest
 
-from librsync_py import Delta, Patch, RsSignatureMagic, Signature
+from librsync_py import Delta, JobStats, Patch, RsSignatureMagic, Signature
+from librsync_py._internals import _lib
 
 
 def _get_signature(
@@ -673,6 +676,153 @@ def test_patch_context_manager_api() -> None:
     assert obj.closed
     assert obj.basis_closed
     assert obj._job is None
+
+
+@pytest.mark.parametrize("cls", [Signature, Delta, Patch])
+def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
+    """Test job statistics."""
+
+    if cls is Signature:
+        obj = _get_signature()
+        job_type = JobStats.JobType.SIGNATURE
+    elif cls is Delta:
+        obj = _get_delta()
+        job_type = JobStats.JobType.DELTA
+    else:
+        obj = _get_patch()
+        job_type = JobStats.JobType.PATCH
+
+    # The start time is recorded by the C API, which in turn measures
+    # epoch time, so it is limited to 1s intervals. Sleep for 1 second to
+    # ensure the time taken is > 0
+    sleep(1)
+
+    assert isinstance(obj.job_stats, JobStats)
+    assert obj.job_stats.job_type == job_type
+    assert obj.job_stats.lit_cmds == 0
+    assert obj.job_stats.lit_bytes == 0
+    assert obj.job_stats.lit_cmdbytes == 0
+    assert obj.job_stats.copy_cmds == 0
+    assert obj.job_stats.copy_bytes == 0
+    assert obj.job_stats.copy_cmdbytes == 0
+    assert obj.job_stats.sig_cmds == 0
+    assert obj.job_stats.sig_bytes == 0
+    assert obj.job_stats.false_matches == 0
+    assert obj.job_stats.sig_blocks == 0
+    assert obj.job_stats.block_len == 0
+    assert obj.job_stats.in_bytes == 0
+    assert obj.job_stats.out_bytes == 0
+    assert isinstance(obj.job_stats.start_time, datetime)
+    assert obj.job_stats.completion_time is None
+    # Time taken is measured as the difference between time now and start time
+    # rounded down to the last full second
+    assert obj.job_stats.time_taken == 1
+    assert obj.job_stats.in_speed == 0
+    assert obj.job_stats.out_speed == 0
+
+    if cls is Delta:
+        assert isinstance(obj.job_stats, JobStats)
+        assert obj.signature_job_stats.job_type == JobStats.JobType.LOAD_SIGNATURE
+        assert obj.signature_job_stats.lit_cmds == 0
+        assert obj.signature_job_stats.lit_bytes == 0
+        assert obj.signature_job_stats.lit_cmdbytes == 0
+        assert obj.signature_job_stats.copy_cmds == 0
+        assert obj.signature_job_stats.copy_bytes == 0
+        assert obj.signature_job_stats.copy_cmdbytes == 0
+        assert obj.signature_job_stats.sig_cmds == 0
+        assert obj.signature_job_stats.sig_bytes == 0
+        assert obj.signature_job_stats.false_matches == 0
+        assert obj.signature_job_stats.sig_blocks == 0
+        assert obj.signature_job_stats.block_len == 0
+        assert obj.signature_job_stats.in_bytes == 0
+        assert obj.signature_job_stats.out_bytes == 0
+        assert isinstance(obj.signature_job_stats.start_time, datetime)
+        assert obj.signature_job_stats.completion_time is None
+        # Time taken is measured as the difference between time now and start time
+        # rounded down to the last full second
+        assert obj.signature_job_stats.time_taken == 1
+        assert obj.signature_job_stats.in_speed == 0
+        assert obj.signature_job_stats.out_speed == 0
+
+        obj.load_signature()
+
+        raw_stats = _lib.rs_job_statistics(obj._sig_job)
+
+        in_len = len(_get_delta().raw_signature.read())
+
+        assert isinstance(obj.job_stats, JobStats)
+        assert obj.signature_job_stats.job_type == JobStats.JobType.LOAD_SIGNATURE
+        assert obj.signature_job_stats.lit_cmds == raw_stats.lit_cmds
+        assert obj.signature_job_stats.lit_bytes == raw_stats.lit_bytes
+        assert obj.signature_job_stats.lit_cmdbytes == raw_stats.lit_cmdbytes
+        assert obj.signature_job_stats.copy_cmds == raw_stats.copy_cmds
+        assert obj.signature_job_stats.copy_bytes == raw_stats.copy_bytes
+        assert obj.signature_job_stats.copy_cmdbytes == raw_stats.copy_cmdbytes
+        assert obj.signature_job_stats.sig_cmds == raw_stats.sig_cmds
+        assert obj.signature_job_stats.sig_bytes == raw_stats.sig_bytes
+        assert obj.signature_job_stats.false_matches == raw_stats.false_matches
+        assert obj.signature_job_stats.sig_blocks == raw_stats.sig_blocks
+        assert obj.signature_job_stats.block_len == raw_stats.block_len
+        assert obj.signature_job_stats.in_bytes == in_len
+        assert obj.signature_job_stats.out_bytes == 0
+        assert isinstance(obj.signature_job_stats.start_time, datetime)
+        assert isinstance(obj.signature_job_stats.completion_time, datetime)
+        assert obj.signature_job_stats.time_taken == 1
+        assert (
+            obj.signature_job_stats.in_speed == in_len / obj.signature_job_stats.time_taken
+        )
+        assert obj.signature_job_stats.out_speed == 0
+
+    # The completion time is recorded by the C API, which in turn measures
+    # epoch time, so it is limited to 1s intervals. Sleep for 1 second to
+    # ensure the time taken is > 1
+    sleep(1)
+
+    out_len = len(obj.read())
+    if cls is Signature:
+        in_len = len(_get_signature().raw.read())
+    elif cls is Delta:
+        in_len = len(_get_delta().raw.read())
+    elif cls is Patch:
+        delta = _get_delta()
+        delta.load_signature()
+        in_len = len(delta.read())
+
+    raw_stats = _lib.rs_job_statistics(obj._job)
+
+    assert isinstance(obj.job_stats, JobStats)
+    assert obj.job_stats.job_type == job_type
+    assert obj.job_stats.lit_cmds == raw_stats.lit_cmds
+    assert obj.job_stats.lit_bytes == raw_stats.lit_bytes
+    assert obj.job_stats.lit_cmdbytes == raw_stats.lit_cmdbytes
+    assert obj.job_stats.copy_cmds == raw_stats.copy_cmds
+    assert obj.job_stats.copy_bytes == raw_stats.copy_bytes
+    assert obj.job_stats.copy_cmdbytes == raw_stats.copy_cmdbytes
+    assert obj.job_stats.sig_cmds == raw_stats.sig_cmds
+    assert obj.job_stats.sig_bytes == raw_stats.sig_bytes
+    assert obj.job_stats.false_matches == raw_stats.false_matches
+    assert obj.job_stats.sig_blocks == raw_stats.sig_blocks
+    assert obj.job_stats.block_len == raw_stats.block_len
+    assert obj.job_stats.in_bytes == in_len
+    assert obj.job_stats.out_bytes == out_len
+    assert isinstance(obj.job_stats.start_time, datetime)
+    assert isinstance(obj.job_stats.completion_time, datetime)
+    assert obj.job_stats.time_taken == 2
+    assert obj.job_stats.in_speed == in_len / obj.job_stats.time_taken
+    assert obj.job_stats.out_speed == out_len / obj.job_stats.time_taken
+
+    obj.close()
+    with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+        obj.job_stats
+
+    if cls is Delta:
+        obj.close_signature()
+        with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
+            obj.signature_job_stats
+
+    # TODO:
+    # - delta match stats
+    # - patch basis in/out byte stats?
 
 
 # @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
