@@ -1038,7 +1038,8 @@ def test_delta_match_stats() -> None:
 #         assert len(obj.read1(arg)) == 0
 
 
-def test_full() -> None:
+def test_full_lifecycle() -> None:
+    """Test full lifecycle - signature, load signature, delta and patch."""
     orig = ((b"123" * 256) + b"4") * 64
     new = ((b"123" * 256) + b"5") * 48
 
@@ -1098,5 +1099,56 @@ def test_full() -> None:
     patched_orig += patch.read(100)
     patched_orig += patch.read1()
     patched_orig += patch.read()
+
+    assert new == patched_orig
+
+
+def test_full_lifecycle_1_byte_at_a_time() -> None:
+    """Test full lifecycle byte-wise - signature, load signature, delta and patch."""
+
+    def read_stream(obj: Signature | Delta | Patch) -> bytes:
+        buffer = bytes()
+
+        while True:
+            chunk = obj.read(1)
+            if not chunk:
+                break
+            buffer += chunk
+
+            chunk = obj.read1(1)
+            if not chunk:
+                break
+            buffer += chunk
+
+            chunk = bytearray(1)
+
+            read = obj.readinto(chunk)
+            if not read:
+                break
+            buffer += chunk
+
+            read = obj.readinto1(chunk)
+            if not read:
+                break
+            buffer += chunk
+
+        return buffer
+
+    orig = ((b"123" * 256) + b"4") * 64
+    new = ((b"123" * 256) + b"5") * 48
+
+    sig_buffer = read_stream(Signature(io.BytesIO(orig)))
+
+    delta = Delta(io.BytesIO(sig_buffer), io.BytesIO(new))
+    while True:
+        read = delta.load_signature(1)
+        if not read:
+            break
+        read = delta.load_signature1(1)
+        if not read:
+            break
+
+    delta_buffer = read_stream(delta)
+    patched_orig = read_stream(Patch(io.BytesIO(orig), io.BytesIO(delta_buffer)))
 
     assert new == patched_orig
