@@ -49,7 +49,8 @@ def _get_delta(
     :param buffer_size: The buffer size
     :type buffer_size: int
     :returns: The delta object
-    :rtype: Delta"""
+    :rtype: Delta
+    """
     if isinstance(basis, int):
         basis = b"0" * basis
     # Read the signature and wrap it into BytesIO to make it seekable
@@ -78,7 +79,8 @@ def _get_patch(
     :param buffer_size: The buffer size
     :type buffer_size: int
     :returns: The delta object
-    :rtype: Delta"""
+    :rtype: Delta
+    """
     if isinstance(basis, int):
         basis = b"0" * basis
     if delta is None:
@@ -259,7 +261,7 @@ def test_pickling_not_supported(cls: type[Signature | Delta | Patch]) -> None:
     with pytest.raises(TypeError, match=r"Cannot pickle.*object"):
         obj.__getstate__()
     with pytest.raises(TypeError, match=r"Cannot unpickle.*object"):
-        obj.__setstate__(dict())
+        obj.__setstate__({})
 
 
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
@@ -272,7 +274,7 @@ def test_repr(cls: type[Signature | Delta | Patch]) -> None:
     else:
         obj = _get_patch()
 
-    assert f"{obj!r}"
+    assert len(f"{obj!r}") > 0
 
 
 def test_delta_load_signature() -> None:
@@ -294,38 +296,46 @@ def test_delta_load_signature() -> None:
         obj.readinto1(bytearray(100))
     with pytest.raises(ValueError, match=msg):
         # Delta job is not created until the signature is fully loaded
-        obj.job_stats
+        obj.job_stats  # noqa: B018
 
     res = obj.load_signature(0)
-    assert isinstance(res, int) and res == 0
+    assert isinstance(res, int)
+    assert res == 0
     res = obj.load_signature1(0)
-    assert isinstance(res, int) and res == 0
+    assert isinstance(res, int)
+    assert res == 0
     res = obj.load_signature(1)
-    assert isinstance(res, int) and res == 1
+    assert isinstance(res, int)
+    assert res == 1
     res = obj.load_signature1(2)
-    assert isinstance(res, int) and res == 2
+    assert isinstance(res, int)
+    assert res == 2  # noqa: PLR2004
     for arg in (None, -1, -2):  # < -1 should be treated as -1
         obj = _get_delta(basis=data_size, buffer_size=buffer_size)
         assert not obj.signature_loaded
         res = obj.load_signature(arg)
-        assert isinstance(res, int) and res > 0
+        assert isinstance(res, int)
+        assert res > 0
         assert obj.signature_loaded
 
         res = obj.load_signature(arg)
-        assert isinstance(res, int) and res == 0
+        assert isinstance(res, int)
+        assert res == 0
         assert obj.signature_loaded
 
     for arg in (None, -1, -2):  # < -1 should be treated as -1
         obj = _get_delta(basis=data_size, buffer_size=buffer_size)
         assert not obj.signature_loaded
         res = obj.load_signature1(arg)
-        assert isinstance(res, int) and res == buffer_size
+        assert isinstance(res, int)
+        assert res == buffer_size
 
         obj.load_signature(arg)
         assert obj.signature_loaded
 
         res = obj.load_signature1(arg)
-        assert isinstance(res, int) and res == 0
+        assert isinstance(res, int)
+        assert res == 0
         assert obj.signature_loaded
 
 
@@ -336,7 +346,9 @@ def test_read(cls: type[Signature | Delta | Patch]) -> None:
     data_size = 10 * buffer_size
 
     if cls is Signature:
-        get_obj = lambda: _get_signature(basis=data_size, buffer_size=buffer_size)
+
+        def get_obj() -> Signature:
+            return _get_signature(basis=data_size, buffer_size=buffer_size)
     elif cls is Delta:
 
         def get_obj() -> Delta:
@@ -344,39 +356,50 @@ def test_read(cls: type[Signature | Delta | Patch]) -> None:
             o.load_signature()
             return o
     else:
-        get_obj = lambda: _get_patch(basis=data_size, buffer_size=buffer_size)
+
+        def get_obj() -> Patch:
+            return _get_patch(basis=data_size, buffer_size=buffer_size)
 
     obj = get_obj()
     assert obj.readable()
 
     res = obj.read(0)
-    assert isinstance(res, bytes) and len(res) == 0
+    assert isinstance(res, bytes)
+    assert len(res) == 0
     res = obj.read1(0)
-    assert isinstance(res, bytes) and len(res) == 0
+    assert isinstance(res, bytes)
+    assert len(res) == 0
     res = obj.read(1)
-    assert isinstance(res, bytes) and len(res) == 1
+    assert isinstance(res, bytes)
+    assert len(res) == 1
     res = obj.read1(2)
-    assert isinstance(res, bytes) and len(res) == 2
+    assert isinstance(res, bytes)
+    assert len(res) == 2  # noqa: PLR2004
     for arg in (None, -1, -2):  # < -1 should be treated as -1
         obj = get_obj()
         res = obj.read1(arg)
-        assert isinstance(res, bytes) and 0 < len(res) <= buffer_size
+        assert isinstance(res, bytes)
+        assert 0 < len(res) <= buffer_size
     for arg in (None, -1, -2):  # < -1 should be treated as -1
         obj = get_obj()
         res = obj.read(arg)
-        assert isinstance(res, bytes) and len(res) > 0
+        assert isinstance(res, bytes)
+        assert len(res) > 0
         res = obj.read(arg)
-        assert isinstance(res, bytes) and len(res) == 0
+        assert isinstance(res, bytes)
+        assert len(res) == 0
 
 
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
-def test_readinto(cls: type[Signature | Delta | Patch]) -> None:
+def test_readinto(cls: type[Signature | Delta | Patch]) -> None:  # noqa: PLR0915
     """Test reading a processed stream into a buffer."""
     buffer_size = 10
     data_size = 10 * buffer_size
 
     if cls is Signature:
-        get_obj = lambda: _get_signature(basis=data_size, buffer_size=buffer_size)
+
+        def get_obj() -> Signature:
+            return _get_signature(basis=data_size, buffer_size=buffer_size)
     elif cls is Delta:
 
         def get_obj() -> Delta:
@@ -384,52 +407,68 @@ def test_readinto(cls: type[Signature | Delta | Patch]) -> None:
             o.load_signature()
             return o
     else:
-        get_obj = lambda: _get_patch(basis=data_size, buffer_size=buffer_size)
+
+        def get_obj() -> Patch:
+            return _get_patch(basis=data_size, buffer_size=buffer_size)
 
     obj = get_obj()
     assert obj.readable()
 
     msg = r'"buffer" must be writable'
     with pytest.raises(ValueError, match=msg):
-        obj.readinto(bytes())
+        obj.readinto(b"")
     with pytest.raises(ValueError, match=msg):
-        obj.readinto1(bytes())
+        obj.readinto1(b"")
 
     buffer = bytearray()
 
     res = obj.readinto(buffer)
-    assert isinstance(res, int) and res == 0
+    assert isinstance(res, int)
+    assert res == 0
     res = obj.readinto1(buffer)
-    assert isinstance(res, int) and res == 0
+    assert isinstance(res, int)
+    assert res == 0
     res = obj.readinto(memoryview(buffer))
-    assert isinstance(res, int) and res == 0
+    assert isinstance(res, int)
+    assert res == 0
     res = obj.readinto1(memoryview(buffer))
-    assert isinstance(res, int) and res == 0
+    assert isinstance(res, int)
+    assert res == 0
 
     buffer = bytearray(1)
 
     res = obj.readinto(buffer)
-    assert isinstance(res, int) and res == 1 and buffer != bytearray(1)
+    assert isinstance(res, int)
+    assert res == 1
+    assert buffer != bytearray(1)
     res = obj.readinto(memoryview(buffer))
-    assert isinstance(res, int) and res == 1 and buffer != bytearray(1)
+    assert isinstance(res, int)
+    assert res == 1
+    assert buffer != bytearray(1)
 
     buffer = bytearray(3)
 
     res = obj.readinto1(buffer)
-    assert isinstance(res, int) and res == 3 and buffer != bytearray(3)
+    assert isinstance(res, int)
+    assert res == 3  # noqa: PLR2004
+    assert buffer != bytearray(3)
     res = obj.readinto1(memoryview(buffer))
-    assert isinstance(res, int) and res == 3 and buffer != bytearray(3)
+    assert isinstance(res, int)
+    assert res == 3  # noqa: PLR2004
+    assert buffer != bytearray(3)
 
     buffer = bytearray(data_size)
 
     obj = get_obj()
     res = obj.readinto1(buffer)
-    assert isinstance(res, int) and res > 0
+    assert isinstance(res, int)
+    assert res > 0
     assert buffer != bytearray(data_size)
 
     obj = get_obj()
     res = obj.readinto(buffer)
-    assert isinstance(res, int) and res > 0
+    assert isinstance(res, int)
+    assert res > 0
     assert buffer != bytearray(data_size)
 
 
@@ -439,7 +478,7 @@ def test_signature_close() -> None:
     obj.close()
     assert obj.raw.closed
     assert obj.closed
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
     with pytest.raises(ValueError, match=r"I/O operation on closed file."):
         obj.read()
@@ -462,16 +501,16 @@ def test_delta_close() -> None:
     assert obj.raw_signature.closed
     assert obj.signature_closed
     assert not obj.closed
-    assert obj._sig is not None
-    assert obj._job is not None
-    assert obj._sig_job is None
+    assert obj._sig is not None  # noqa: SLF001
+    assert obj._job is not None  # noqa: SLF001
+    assert obj._sig_job is None  # noqa: SLF001
 
     obj.close()
     assert obj.raw.closed
     assert obj.signature_closed
     assert obj.closed
-    assert obj._job is None
-    assert obj._sig is None
+    assert obj._job is None  # noqa: SLF001
+    assert obj._sig is None  # noqa: SLF001
 
     obj = _get_delta()
     obj.close_signature()
@@ -531,13 +570,13 @@ def test_patch_close() -> None:
     assert obj.raw_basis.closed
     assert obj.basis_closed
     assert not obj.closed
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
     obj.close()
     assert obj.raw.closed
     assert obj.basis_closed
     assert obj.closed
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
     obj = _get_patch()
     obj.close_basis()
@@ -577,7 +616,7 @@ def test_signature_detach() -> None:
     obj = _get_signature()
     obj.detach()
     assert obj.raw is None
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
     with pytest.raises(ValueError, match=r"raw stream already detached"):
         obj.detach()
@@ -602,17 +641,17 @@ def test_delta_detach() -> None:
     obj.detach_signature()
     assert obj.raw_signature is None
     assert obj.raw is not None
-    assert obj._sig is not None
-    assert obj._job is not None
-    assert obj._sig_job is None
+    assert obj._sig is not None  # noqa: SLF001
+    assert obj._job is not None  # noqa: SLF001
+    assert obj._sig_job is None  # noqa: SLF001
 
     with pytest.raises(ValueError, match=r"raw_signature stream already detached"):
         obj.detach_signature()
 
     obj.detach()
     assert obj.raw is None
-    assert obj._job is None
-    assert obj._sig is None
+    assert obj._job is None  # noqa: SLF001
+    assert obj._sig is None  # noqa: SLF001
 
     with pytest.raises(ValueError, match=r"raw stream already detached"):
         obj.detach()
@@ -674,14 +713,14 @@ def test_patch_detach() -> None:
     obj.detach_basis()
     assert obj.raw_basis is None
     assert obj.raw is not None
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
     with pytest.raises(ValueError, match=r"raw_basis stream already detached"):
         obj.detach_basis()
 
     obj.detach()
     assert obj.raw is None
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
     with pytest.raises(ValueError, match=r"raw stream already detached"):
         obj.detach()
@@ -705,7 +744,7 @@ def test_patch_detach() -> None:
     obj = _get_patch()
     obj.detach()
     assert obj.raw is None
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
     with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
         obj.read()
@@ -723,10 +762,10 @@ def test_signature_context_manager_api() -> None:
     """Test signature context manager API."""
     with _get_signature() as obj:
         assert not obj.closed
-        assert obj._job is not None
+        assert obj._job is not None  # noqa: SLF001
 
     assert obj.closed
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
 
 def test_delta_context_manager_api() -> None:
@@ -735,23 +774,23 @@ def test_delta_context_manager_api() -> None:
         assert not obj.closed
         assert not obj.signature_closed
         # job should not be created until signature is loaded
-        assert obj._job is None
-        assert obj._sig is not None
-        assert obj._sig_job is not None
+        assert obj._job is None  # noqa: SLF001
+        assert obj._sig is not None  # noqa: SLF001
+        assert obj._sig_job is not None  # noqa: SLF001
 
     with _get_delta() as obj:
         obj.load_signature()
         assert not obj.closed
         assert not obj.signature_closed
-        assert obj._job is not None
-        assert obj._sig is not None
-        assert obj._sig_job is not None
+        assert obj._job is not None  # noqa: SLF001
+        assert obj._sig is not None  # noqa: SLF001
+        assert obj._sig_job is not None  # noqa: SLF001
 
     assert obj.closed
     assert obj.signature_closed
-    assert obj._job is None
-    assert obj._sig is None
-    assert obj._sig_job is None
+    assert obj._job is None  # noqa: SLF001
+    assert obj._sig is None  # noqa: SLF001
+    assert obj._sig_job is None  # noqa: SLF001
 
 
 def test_patch_context_manager_api() -> None:
@@ -759,17 +798,16 @@ def test_patch_context_manager_api() -> None:
     with _get_patch() as obj:
         assert not obj.closed
         assert not obj.basis_closed
-        assert obj._job is not None
+        assert obj._job is not None  # noqa: SLF001
 
     assert obj.closed
     assert obj.basis_closed
-    assert obj._job is None
+    assert obj._job is None  # noqa: SLF001
 
 
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
-def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
+def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0915
     """Test job statistics."""
-
     if cls is Signature:
         obj = _get_signature()
         job_type = JobStats.JobType.SIGNATURE
@@ -836,7 +874,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
 
         obj.load_signature()
 
-        raw_stats = _lib.rs_job_statistics(obj._sig_job)
+        raw_stats = _lib.rs_job_statistics(obj._sig_job)  # noqa: SLF001
 
         in_len = len(_get_delta().raw_signature.read())
 
@@ -879,7 +917,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
         delta.load_signature()
         in_len = len(delta.read())
 
-    raw_stats = _lib.rs_job_statistics(obj._job)
+    raw_stats = _lib.rs_job_statistics(obj._job)  # noqa: SLF001
 
     assert isinstance(obj.job_stats, JobStats)
     assert obj.job_stats.job_type == job_type
@@ -902,7 +940,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
         # Job doesn't get created until after signature is loaded
         assert obj.job_stats.time_taken == 1
     else:
-        assert obj.job_stats.time_taken == 2
+        assert obj.job_stats.time_taken == 2  # noqa: PLR2004
     assert obj.job_stats.in_speed == in_len / obj.job_stats.time_taken
     assert obj.job_stats.out_speed == out_len / obj.job_stats.time_taken
 
@@ -912,13 +950,13 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:
         with pytest.raises(
             ValueError, match=r"I/O operation on a freed librsync signature."
         ):
-            obj.job_stats
+            obj.job_stats  # noqa: B018
         obj.close_signature()
         with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
-            obj.signature_job_stats
+            obj.signature_job_stats  # noqa: B018
     else:
         with pytest.raises(ValueError, match=r"I/O operation on a freed librsync job."):
-            obj.job_stats
+            obj.job_stats  # noqa: B018
 
 
 def test_delta_match_stats() -> None:
@@ -932,7 +970,7 @@ def test_delta_match_stats() -> None:
     obj = _get_delta(Signature(io.BytesIO(text_orig)), text_new)
 
     with pytest.raises(ValueError, match=r"Invalid signature magic."):
-        obj.match_stats
+        obj.match_stats  # noqa: B018
 
     obj.load_signature()
 
@@ -952,7 +990,7 @@ def test_delta_match_stats() -> None:
     obj.read()
 
     # Derefecene struct
-    sig = obj._sig[0][0]
+    sig = obj._sig[0][0]  # noqa: SLF001
 
     assert obj.match_stats.find_count == sig.hashtable.find_count
     assert obj.match_stats.match_count == sig.hashtable.match_count
@@ -981,64 +1019,7 @@ def test_delta_match_stats() -> None:
     )
 
 
-# @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
-# def test_reading(cls: type[Signature | Delta | Patch]) -> None:
-#     """Test stream reading."""
-#     buffer_size = 10
-#     data_size = 10 * buffer_size
-
-#     if cls is Signature:
-#         get_obj = lambda: _get_signature(basis=data_size, buffer_size=buffer_size)
-#     elif cls is Delta:
-#         get_obj = lambda: _get_delta(basis=data_size, buffer_size=buffer_size)
-#     else:
-#         get_obj = lambda: _get_patch(basis=data_size, buffer_size=buffer_size)
-
-#     obj = get_obj()
-
-#     if cls is Delta:
-#         assert obj.load_signature(0) == 0
-#         assert obj.load_signature1(0) == 0
-#         assert obj.load_signature(1) == 1
-#         assert obj.load_signature1(2) == 2
-#         assert obj.load_signature1() == buffer_size
-#         # Check the buffer has been filled
-#         assert len(obj._sig_buf) == 0
-#         # load the rest of the signature
-#         assert obj.load_signature() < data_size
-#         # Check there isn't more to load
-#         assert obj.load_signature() == 0
-
-#         # < -1 is an edge case, which should be treated as being -1
-#         for arg in (None, -1, -2):
-#             obj = get_obj()
-#             assert obj.load_signature(arg) <= data_size
-#             assert obj.load_signature(arg) == 0
-#             assert obj.load_signature1(arg) == 0
-
-
-#     assert obj.readable()
-#     assert obj.read(0) == b""
-#     assert len(obj.read1(0)) == 0
-#     assert len(obj.read(1)) == 1
-#     assert len(obj.read1(2)) == 2
-#     assert len(obj.read1()) == buffer_size
-#     # Check the buffer has been filled
-#     assert len(obj._sig_buf) == 0
-#     # load the rest of the signature
-#     assert len(obj.read()) < data_size
-#     # Check there isn't more to load
-#     assert len(obj.read()) == 0
-
-#     # < -1 is an edge case, which should be treated as being -1
-#     for arg in (None, -1, -2):
-#         obj = get_obj()
-#         assert len(obj.read(arg)) <= data_size
-#         assert len(obj.read(arg)) == 0
-#         assert len(obj.read1(arg)) == 0
-
-
-def test_full_lifecycle() -> None:
+def test_full_lifecycle() -> None:  # noqa: PLR0915
     """Test full lifecycle - signature, load signature, delta and patch."""
     orig = ((b"123" * 256) + b"4") * 64
     new = ((b"123" * 256) + b"5") * 48
@@ -1107,7 +1088,7 @@ def test_full_lifecycle_1_byte_at_a_time() -> None:
     """Test full lifecycle byte-wise - signature, load signature, delta and patch."""
 
     def read_stream(obj: Signature | Delta | Patch) -> bytes:
-        buffer = bytes()
+        buffer = b""
 
         while True:
             chunk = obj.read(1)

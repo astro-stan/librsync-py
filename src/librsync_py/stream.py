@@ -293,62 +293,6 @@ class _Job(io.BufferedIOBase):
         self._buf = self._buf[size:]
         return bytes(out)
 
-    # def _read(
-    #     self: Self,
-    #     size: int | None = -1,
-    #     *,
-    #     read1: bool = False,
-    # ) -> bytes:
-    #     """Process and read up to size bytes from the stream.
-
-    #     :param size: The max amount of bytes to read. Use -1 to read until EOF
-    #     :type size: Optional[int]
-    #     :param read1: Perform at most 1 read() system call.
-    #     :type read1: bool
-    #     :returns: The read data
-    #     :rtype: bytes
-    #     :raises RsCApiError: If something goes wrong during the read
-    #     :raises ValueError: If input param validation fails
-    #     """
-    #     if size is None or size < -1:
-    #         size = -1
-
-    #     if size == 0:
-    #         return b""
-
-    #     # Fast route - return processed and cached data from the buffer
-    #     if len(self._buf) >= size and size >= 0:
-    #         out = self._buf[:size]
-    #         self._buf = self._buf[size:]
-    #         return bytes(out)
-
-    #     # Slow route - read data from the stream and process it
-    #     chunks = [self._buf]
-    #     total_length = len(self._buf)
-
-    #     # Chunk output buffer
-    #     chunk_buffer = bytearray(max(self.buffer_size, size))
-
-    #     result = RsResult.BLOCKED
-    #     with memoryview(chunk_buffer) as mv:
-    #         while result == RsResult.BLOCKED:
-    #             result, written = self._process_raw(mv, read1=read1)
-    #             chunks.append(mv[:written].tobytes())
-    #             total_length += written
-    #             if (total_length >= size and size >= 0) or read1:
-    #                 break
-
-    #     # Join all chunks at once
-    #     self._buf = bytearray().join(chunks)
-
-    #     if size < 0:
-    #         size = len(self._buf)
-
-    #     # Take data from the buffer and return it
-    #     out = self._buf[:size]
-    #     self._buf = self._buf[size:]
-    #     return bytes(out)
-
     def _process_raw(
         self: Self,
         buf: memoryview,
@@ -815,6 +759,7 @@ class Delta(_Job):
 
     @property
     def job_stats(self: Self) -> JobStats:
+        """Get job statistics."""
         with self._rlock:
             self._check_signature_loaded()
             return super().job_stats
