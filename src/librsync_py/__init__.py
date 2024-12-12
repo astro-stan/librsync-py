@@ -15,13 +15,13 @@ LIBRSYNC_VERSION_STR: str = _get_lib_version_str()
 
 __all__ = [
     "LIBRSYNC_VERSION_STR",
-    "RsSignatureMagic",
-    "Signature",
     "Delta",
-    "Patch",
-    "signature",
-    "delta",
-    "patch",
     "JobStats",
     "MatchStats",
+    "Patch",
+    "RsSignatureMagic",
+    "Signature",
+    "delta",
+    "patch",
+    "signature",
 ]
