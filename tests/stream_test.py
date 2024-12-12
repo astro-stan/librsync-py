@@ -1118,9 +1118,9 @@ def test_full_lifecycle_1_byte_at_a_time() -> None:
     orig = ((b"123" * 256) + b"4") * 64
     new = ((b"123" * 256) + b"5") * 48
 
-    sig_buffer = read_stream(Signature(io.BytesIO(orig)))
+    sig_buffer = read_stream(Signature(io.BytesIO(orig), buffer_size=1))
 
-    delta = Delta(io.BytesIO(sig_buffer), io.BytesIO(new))
+    delta = Delta(io.BytesIO(sig_buffer), io.BytesIO(new), buffer_size=1)
     while True:
         read = delta.load_signature(1)
         if not read:
@@ -1130,6 +1130,8 @@ def test_full_lifecycle_1_byte_at_a_time() -> None:
             break
 
     delta_buffer = read_stream(delta)
-    patched_orig = read_stream(Patch(io.BytesIO(orig), io.BytesIO(delta_buffer)))
+    patched_orig = read_stream(
+        Patch(io.BytesIO(orig), io.BytesIO(delta_buffer), buffer_size=1)
+    )
 
     assert new == patched_orig
