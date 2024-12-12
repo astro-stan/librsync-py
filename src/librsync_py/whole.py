@@ -12,7 +12,7 @@ from .stream import Delta, Patch, Signature
 
 
 def signature(  # noqa: PLR0913
-    basis: io.RawIOBase,
+    basis: bytes,
     chunk_size: int = io.DEFAULT_BUFFER_SIZE,
     file_size: int | None = None,
     sig_type: RsSignatureMagic = RsSignatureMagic.RK_BLAKE2_SIG,
@@ -22,7 +22,7 @@ def signature(  # noqa: PLR0913
     """Generate a new signature.
 
     :param basis: The source file-like object
-    :type basis: io.RawIOBase
+    :type basis: bytes
     :param chunk_size: The read chunk size in bytes. For data sizes above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -40,7 +40,7 @@ def signature(  # noqa: PLR0913
     :rtype: bytes
     """
     return Signature(
-        raw=basis,
+        raw=io.BytesIO(basis),
         buffer_size=chunk_size,
         file_size=file_size,
         sig_magic=sig_type,
@@ -50,16 +50,16 @@ def signature(  # noqa: PLR0913
 
 
 def delta(
-    signature: io.RawIOBase,
-    basis: io.RawIOBase,
+    signature: bytes,
+    basis: bytes,
     chunk_size: int = io.DEFAULT_BUFFER_SIZE,
 ) -> bytes:
     """Generate a new delta.
 
     :param signature: The signature file-like object
-    :type signature: io.RawIOBase
+    :type signature: bytes
     :param basis: The source file-like object
-    :type basis: io.RawIOBase
+    :type basis: bytes
     :param chunk_size: The read chunk size in bytes. For data sizes above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -67,22 +67,26 @@ def delta(
     :returns: The generated delta
     :rtype: bytes
     """
-    d = Delta(sig_raw=signature, basis_raw=basis, buffer_size=chunk_size)
+    d = Delta(
+        sig_raw=io.BytesIO(signature),
+        basis_raw=io.BytesIO(basis),
+        buffer_size=chunk_size,
+    )
     d.load_signature()
     return d.read()
 
 
 def patch(
-    basis: io.RawIOBase,
-    delta: io.RawIOBase,
+    basis: bytes,
+    delta: bytes,
     chunk_size: int = io.DEFAULT_BUFFER_SIZE,
 ) -> bytes:
     """Patch a file-like object.
 
     :param basis: The source file-like object
-    :type basis: io.RawIOBase
+    :type basis: bytes
     :param delta: The delta file-like object
-    :type delta: io.RawIOBase
+    :type delta: bytes
     :param chunk_size: The read chunk size in bytes. For data sizes above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -91,7 +95,7 @@ def patch(
     :rtype: bytes
     """
     return Patch(
-        basis_raw=basis,
-        delta_raw=delta,
+        basis_raw=io.BytesIO(basis),
+        delta_raw=io.BytesIO(delta),
         buffer_size=chunk_size,
     ).read()

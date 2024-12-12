@@ -78,7 +78,11 @@ class _Job(io.BufferedIOBase):
 
         self._rlock = RLock()
         self._raw = raw
-        self.__job = job
+        self._job = job
+
+        # Used for statistics
+        self._in_bytes = 0
+        self._out_bytes = 0
 
         # Used to collect leftover unproceesed data read from the raw stream
         self._raw_buf = b""
@@ -146,15 +150,7 @@ class _Job(io.BufferedIOBase):
         with self._rlock:
             self._checkClosed()
             self._check_c_api_freed()
-            if not isinstance(buffer, memoryview):
-                buffer = memoryview(buffer)
-            if buffer.readonly:
-                msg = '"buffer" must be writable'
-                raise ValueError(msg)
-            buffer = buffer.cast("B")
-
-            _, length = self._readinto(buffer, read1=False)
-            return length
+            return self._readinto(buffer, read1=False)
 
     def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:
         """Process and read up to size bytes into a buffer while performing at most 1 read() system call.
@@ -171,15 +167,7 @@ class _Job(io.BufferedIOBase):
         with self._rlock:
             self._checkClosed()
             self._check_c_api_freed()
-            if not isinstance(buffer, memoryview):
-                buffer = memoryview(buffer)
-            if buffer.readonly:
-                msg = '"buffer" must be writable'
-                raise ValueError(msg)
-            buffer = buffer.cast("B")
-
-            _, length = self._readinto(buffer, read1=True)
-            return length
+            return self._readinto(buffer, read1=True)
 
     def close(self: Self) -> None:
         """Close the stream.
@@ -187,9 +175,8 @@ class _Job(io.BufferedIOBase):
         :raises ValueError: If reader is closed or in invalid state
         """
         with self._rlock:
+            self._close()
             self._free_c_api_resources()
-            if self.raw is not None and not self.closed:
-                self.raw.close()
 
     def detach(self: Self) -> io.RawIOBase:
         """Detach from the underlying stream and return it.
@@ -205,6 +192,55 @@ class _Job(io.BufferedIOBase):
             self._raw = None
             self._free_c_api_resources()
             return raw
+
+    def _readinto(
+        self: Self,
+        buffer: bytearray | memoryview | array,
+        *,
+        read1: bool = False,
+    ) -> int:
+        """Process and read up to len(buffer) bytes into buffer.
+
+        :param buffer: The buffer to read data into.
+        :type buffer: Union[bytearray, memoryview, array]
+        :param read1: Perform at most 1 read() system call.
+        :type read1: bool
+        :returns: The length of the read data
+        :rtype: int
+        :raises RsCApiError: If something goes wrong during the read
+        :raises ValueError: If input param validation fails
+        """
+        if not isinstance(buffer, memoryview):
+            buffer = memoryview(buffer)
+        if buffer.readonly:
+            msg = '"buffer" must be writable'
+            raise ValueError(msg)
+        buffer = buffer.cast("B")
+
+        # Slow route - read data from the stream and process it
+        if len(self._buf) < len(buffer):
+            chunks = [self._buf]
+            total_length = len(self._buf)
+
+            # Chunk output buffer
+            chunk_buffer = bytearray(max(self.buffer_size, len(buffer)))
+
+            result = RsResult.BLOCKED
+            with memoryview(chunk_buffer) as mv:
+                while result == RsResult.BLOCKED:
+                    result, written = self._process_raw(mv, read1=read1)
+                    chunks.append(mv[:written].tobytes())
+                    total_length += written
+                    if total_length >= len(buffer) or read1:
+                        break
+
+            # Join all chunks at once
+            self._buf = bytearray().join(chunks)
+
+        out_len = min(len(buffer), len(self._buf))
+        buffer[:out_len] = self._buf[:out_len]
+        self._buf = self._buf[out_len:]
+        return out_len
 
     def _read(
         self: Self,
@@ -223,36 +259,31 @@ class _Job(io.BufferedIOBase):
         :raises RsCApiError: If something goes wrong during the read
         :raises ValueError: If input param validation fails
         """
-        if size is None:
+        if size is None or size < -1:
             size = -1
 
         if size == 0:
             return b""
 
-        # Fast route - return processed and cached data from the buffer
-        if len(self._buf) >= size and size >= 0:
-            out = self._buf[:size]
-            self._buf = self._buf[size:]
-            return bytes(out)
-
         # Slow route - read data from the stream and process it
-        chunks = [self._buf]
-        total_length = len(self._buf)
+        if len(self._buf) < size or size < 0:
+            chunks = [self._buf]
+            total_length = len(self._buf)
 
-        chunk_size = max(self.buffer_size, size)
-        chunk_buffer = bytearray(chunk_size)  # Chunk output buffer
+            # Chunk output buffer
+            chunk_buffer = bytearray(max(self.buffer_size, size))
 
-        result = RsResult.BLOCKED
-        with memoryview(chunk_buffer) as mv:
-            while result == RsResult.BLOCKED:
-                result, written = self._readinto(mv, read1=read1)
-                chunks.append(mv[:written].tobytes())
-                total_length += written
-                if (total_length >= size and size >= 0) or read1:
-                    break
+            result = RsResult.BLOCKED
+            with memoryview(chunk_buffer) as mv:
+                while result == RsResult.BLOCKED:
+                    result, written = self._process_raw(mv, read1=read1)
+                    chunks.append(mv[:written].tobytes())
+                    total_length += written
+                    if (total_length >= size and size >= 0) or read1:
+                        break
 
-        # Join all chunks at once
-        self._buf = bytearray().join(chunks)
+            # Join all chunks at once
+            self._buf = bytearray().join(chunks)
 
         if size < 0:
             size = len(self._buf)
@@ -262,13 +293,13 @@ class _Job(io.BufferedIOBase):
         self._buf = self._buf[size:]
         return bytes(out)
 
-    def _readinto(
+    def _process_raw(
         self: Self,
         buf: memoryview,
         *,
         read1: bool = False,
     ) -> tuple[RsResult, int]:
-        """Process and read from the stream into a buffer.
+        """Process and read from the raw stream into a buffer.
 
         :param buf: The buffer to store the read data into
         :type buf: memoryview
@@ -284,12 +315,15 @@ class _Job(io.BufferedIOBase):
 
         result = RsResult.BLOCKED
         while result == RsResult.BLOCKED and out_cap > 0:
-            self._raw_buf += self.raw.read(max(out_cap - len(self._raw_buf), 0))
+            chunk = self.raw.read(max(out_cap - len(self._raw_buf), 0))
+            self._in_bytes += len(chunk)
+
+            self._raw_buf += chunk
             cap = len(self._raw_buf)
 
             with memoryview(self._raw_buf) as ib:
                 result, read, written = job_iter(
-                    self.__job,
+                    self._job,
                     ib,
                     buf[out_pos:],
                     eof=not bool(cap),
@@ -302,18 +336,35 @@ class _Job(io.BufferedIOBase):
             if read1:
                 break
 
+        self._out_bytes += out_pos
         return result, out_pos
+
+    def _close(self: Self) -> None:
+        """Close the stream.
+
+        :raises ValueError: If reader is closed or in invalid state
+        """
+        # If during teardown the attributes do not exist
+        # exit immediately, there is nothing to cleanup
+        if not (hasattr(self, "raw") and hasattr(self, "closed")):
+            return
+        if self.raw is not None and not self.closed:
+            self.raw.close()
 
     def _free_c_api_resources(self: Self) -> None:
         """Deallocate C API resources."""
-        if self.__job:
-            free_job(self.__job)
-            self.__job = None
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not hasattr(self, "_job"):
+            return
+        if self._job:
+            free_job(self._job)
+            self._job = None
 
     def _check_c_api_freed(self: Self) -> None:
         """Raise ValueError if the C API resources have been freed."""
-        if not self.__job:
-            msg = "I/O operation on a freed librsync job"
+        if not self._job:
+            msg = "I/O operation on a freed librsync job."
             raise ValueError(msg)
 
     @property
@@ -345,23 +396,22 @@ class _Job(io.BufferedIOBase):
         """Get job statistics."""
         with self._rlock:
             self._check_c_api_freed()
-            return get_job_stats(self.__job)
+            return get_job_stats(self._job, self._in_bytes, self._out_bytes)
 
     def __del__(self) -> None:
         """Deallocate the object."""
-        with self._rlock:
-            self.close()
-            self._free_c_api_resources()
-            return super().__del__()
+        self._close()
+        self._free_c_api_resources()
+        return super().__del__()
 
     def __getstate__(self: Self) -> dict:
         """Pickle object."""
-        msg = f"cannot pickle {self.__class__.__name__!r} object"
+        msg = f"Cannot pickle {self.__class__.__name__!r} object"
         raise TypeError(msg)
 
     def __setstate__(self: Self, obj: Any) -> dict:  # noqa: ANN401
         """Unpickle object."""
-        msg = f"cannot unpickle {self.__class__.__name__!r} object"
+        msg = f"Cannot unpickle {self.__class__.__name__!r} object"
         raise TypeError(msg)
 
     def __repr__(self: Self) -> str:
@@ -447,12 +497,23 @@ class Delta(_Job):
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
+        if not sig_raw.readable():
+            msg = '"sig_raw" argument must be readable.'
+            raise OSError(msg)
+
         self._raw_sig = sig_raw
-        self.__sig_loaded = False
+        self._sig_loaded = False
         self._sig_buf = b""
-        self.__sig, self.__sig_job = loadsig_begin()
+        self._sig, self._sig_job = loadsig_begin()
+
+        # Used for statistics
+        self._sig_in_bytes = 0
+
         super().__init__(
-            job=delta_begin(self.__sig),
+            # The delta job must be created after the loadsig job has completed
+            # and the signature hashtable has been generated
+            # see :meth:_load_signature
+            job=None,
             raw=basis_raw,
             buffer_size=buffer_size,
         )
@@ -534,9 +595,8 @@ class Delta(_Job):
     def close_signature(self: Self) -> None:
         """Close signature stream."""
         with self._rlock:
+            self._close_signature()
             self._free_signature_job_c_api_resources()
-            if self.raw_signature is not None and not self.signature_closed:
-                self.raw_signature.close()
 
     def detach_signature(self: Self) -> io.RawIOBase:
         """Detach from the underlying signature stream and return it.
@@ -573,14 +633,14 @@ class Delta(_Job):
         :returns: The amount of bytes loaded.
         :rtype: int
         """
-        if self.__sig_loaded:
-            return 0
-
-        if size is None:
+        if size is None or size < -1:
             size = -1
 
+        if self._sig_loaded or size == 0:
+            return 0
+
         chunk_size = max(size, self.buffer_size)
-        if chunk_size < 1:
+        if chunk_size < 1:  # pragma: no cover
             return 0
 
         output = bytearray()  # loading signatures produces no output
@@ -589,20 +649,23 @@ class Delta(_Job):
         with memoryview(output) as out_mv:
             while result == RsResult.BLOCKED:
                 if len(self._sig_buf) < max(self.buffer_size, chunk_size):
-                    self._sig_buf += self._raw_sig.read(
+                    chunk = self._raw_sig.read(
                         max(self.buffer_size, chunk_size) - len(self._sig_buf)
                     )
+                    self._sig_in_bytes += len(chunk)
+
+                    self._sig_buf += chunk
 
                 with memoryview(self._sig_buf) as in_mv:
                     result, read, _ = job_iter(
-                        self.__sig_job,
+                        self._sig_job,
                         in_mv[: size if size > 0 else len(self._sig_buf)],
                         out_mv,
                         eof=len(in_mv) == 0,
                     )
 
-                if read == 0 and len(self._sig_buf):
-                    # No data was consimed but there is data in the buffer
+                if read == 0 and len(self._sig_buf):  # pragma: no cover
+                    # No data was consumed but there is data in the buffer
                     msg = (
                         "Infinite loop detected. Signature load job consumed "
                         "no input and did not complete."
@@ -615,9 +678,10 @@ class Delta(_Job):
                     break
 
         if result == RsResult.DONE:
-            build_hash_table(self.__sig)  # Index the signature
-            self.__sig_loaded = True
-            self._free_signature_job_c_api_resources()
+            build_hash_table(self._sig)  # Index the signature
+            # Create the delta job
+            self._job = delta_begin(self._sig)
+            self._sig_loaded = True
 
         return total_read
 
@@ -628,11 +692,58 @@ class Delta(_Job):
             raise ValueError(msg)
         self._check_signature_c_api_freed()
 
+    def _close_signature(self: Self) -> None:
+        """Close signature stream."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not (hasattr(self, "raw_signature") and hasattr(self, "signature_closed")):
+            return
+        if self.raw_signature is not None and not self.signature_closed:
+            self.raw_signature.close()
+
+    def _check_signature_closed(self: Self) -> None:
+        """Raise a ValueError if signature file is closed."""
+        if self.signature_closed:
+            msg = "I/O operation on closed file."
+            raise ValueError(msg)
+
+    def _free_signature_c_api_resources(self: Self) -> None:
+        """Deallocate signature C API resources."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not hasattr(self, "_sig"):
+            return
+        if self._sig:
+            free_sig(self._sig)
+            self._sig = None
+
+    def _free_signature_job_c_api_resources(self: Self) -> None:
+        """Deallocate signature job C API resources."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not hasattr(self, "_sig_job"):
+            return
+        if self._sig_job:
+            free_job(self._sig_job)
+            self._sig_job = None
+
+    def _check_signature_c_api_freed(self: Self) -> None:
+        """Raise ValueError if the signature C API resources have been freed."""
+        if not self._sig:
+            msg = "I/O operation on a freed librsync signature."
+            raise ValueError(msg)
+
+    def _check_signature_job_c_api_freed(self: Self) -> None:
+        """Raise ValueError if the signature job C API resources have been freed."""
+        if not self._sig_job:
+            msg = "I/O operation on a freed librsync job."
+            raise ValueError(msg)
+
     @property
     def signature_loaded(self: Self) -> bool:
         """Check the signature has been loaded. True after :meth:`load_signature()` is called."""
         with self._rlock:
-            return self.__sig_loaded
+            return self._sig_loaded
 
     @property
     def raw_signature(self: Self) -> io.RawIOBase:
@@ -647,49 +758,32 @@ class Delta(_Job):
             return self.raw_signature.closed
 
     @property
+    def job_stats(self: Self) -> JobStats:
+        """Get job statistics."""
+        with self._rlock:
+            self._check_signature_loaded()
+            return super().job_stats
+
+    @property
+    def signature_job_stats(self: Self) -> JobStats:
+        """Get load signature job statistics."""
+        with self._rlock:
+            self._check_signature_job_c_api_freed()
+            return get_job_stats(self._sig_job, self._sig_in_bytes, 0)
+
+    @property
     def match_stats(self: Self) -> MatchStats:
         """Get delta match statistics."""
         with self._rlock:
             self._check_signature_c_api_freed()
-            return get_match_stats(self.__sig)
-
-    def _check_signature_closed(self: Self) -> None:
-        """Raise a ValueError if signature file is closed."""
-        if self.signature_closed:
-            msg = "I/O operation on closed file."
-            raise ValueError(msg)
-
-    def _free_signature_c_api_resources(self: Self) -> None:
-        """Deallocate signature C API resources."""
-        if self.__sig:
-            free_sig(self.__sig)
-            self.__sig = None
-
-    def _free_signature_job_c_api_resources(self: Self) -> None:
-        """Deallocate signature job C API resources."""
-        if self.__sig_job:
-            free_job(self.__sig_job)
-            self.__sig_job = None
-
-    def _check_signature_c_api_freed(self: Self) -> None:
-        """Raise ValueError if the signature C API resources have been freed."""
-        if not self.__sig:
-            msg = "I/O operation on a freed librsync signature"
-            raise ValueError(msg)
-
-    def _check_signature_job_c_api_freed(self: Self) -> None:
-        """Raise ValueError if the signature job C API resources have been freed."""
-        if not self.__sig_job:
-            msg = "I/O operation on a freed librsync job"
-            raise ValueError(msg)
+            return get_match_stats(self._sig)
 
     def __del__(self: Self) -> None:
         """Deallocate the object."""
-        with self._rlock:
-            self.close_signature()
-            self._free_signature_c_api_resources()
-            self._free_signature_job_c_api_resources()
-            return super().__del__()
+        self._close_signature()
+        self._free_signature_c_api_resources()
+        self._free_signature_job_c_api_resources()
+        return super().__del__()
 
     def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
         """Context management protocol. Calls close()."""
@@ -746,9 +840,17 @@ class Patch(_Job):
     def close_basis(self: Self) -> None:
         """Close basis stream."""
         with self._rlock:
+            self._close_basis()
             self._free_c_api_resources()
-            if self.raw_basis is not None and not self.basis_closed:
-                self.raw_basis.close()
+
+    def _close_basis(self: Self) -> None:
+        """Close basis stream."""
+        # If during teardown the attribute does not exist
+        # exit immediately, there is nothing to cleanup
+        if not (hasattr(self, "raw_basis") and hasattr(self, "basis_closed")):
+            return
+        if self.raw_basis is not None and not self.basis_closed:
+            self.raw_basis.close()
 
     @property
     def raw_basis(self: Self) -> io.RawIOBase:
@@ -763,9 +865,9 @@ class Patch(_Job):
             return self.raw_basis.closed
 
     def __del__(self) -> None:  # noqa: D105
-        with self._rlock:
-            self.close_basis()
-            return super().__del__()
+        self._close_basis()
+        self._free_c_api_resources()
+        return super().__del__()
 
     def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
         """Context management protocol. Calls close()."""

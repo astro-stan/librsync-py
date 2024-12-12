@@ -8,7 +8,7 @@ import io
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import IntEnum, StrEnum
+from enum import Enum, IntEnum
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
@@ -51,11 +51,11 @@ class RsDeltaMagic(IntEnum):
     """A delta file."""
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True)
 class JobStats:
     """librsync job statistics."""
 
-    class JobType(StrEnum):
+    class JobType(str, Enum):
         """librsync job type."""
 
         NOOP = ""
@@ -107,14 +107,17 @@ class JobStats:
     """The time the job completed. None if the job has not completed yet."""
 
     @property
-    def time_taken(self) -> float:
+    def time_taken(self) -> int:
         """The amount of time taken to complete the job (in seconds).
 
         If the job has not completed yet, the time taken up to this point is
         returned.
+
+        Due to C API limitations, the time will be rounded down to the last full
+        second.
         """
         completion_time = self.completion_time or datetime.now(timezone.utc)
-        return (completion_time - self.start_time).total_seconds()
+        return int((completion_time - self.start_time).total_seconds())
 
     @property
     def in_speed(self) -> float:
@@ -137,7 +140,7 @@ class JobStats:
         return float(self.out_bytes / (self.time_taken or 1))
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True)
 class MatchStats:
     """Delta file match statistics."""
 
@@ -228,19 +231,19 @@ class _PatchHandle:
         """Validate basis."""
         err = ""
         if not isinstance(self.basis, (io.BufferedIOBase, io.RawIOBase)):
-            err = "basis: Expected a binary file-like object."
+            err = "Expected a binary file-like object."
         elif self.basis.closed or not self.basis.readable():
-            err = "basis: Expected a file-like object that is open for reading."
+            err = "Expected a file-like object that is open for reading."
         elif not self.basis.seekable():
-            err = "basis: Expected a file-like object which supports random access (.seek())."
+            err = "Expected a file-like object which supports random access (.seek())."
 
         if err:
-            raise ValueError(err)
+            raise OSError(err)
 
     def validate_exc(self) -> None:
         """Validate exc."""
         if not (self.exc is None or isinstance(self.exc, BaseException)):
-            err = "exc: Expected an instance of BaseException() or None"
+            err = "Expected an instance of BaseException() or None"
             raise ValueError(err)
 
 
@@ -299,7 +302,7 @@ def _validate_sig_args(
     :type block_length: int
     :param hash_length: The signature hash length
     :type hash_length: int
-    :param get_sig_args_call: True if this is a call to `rs_get_sig_args()`
+    :param get_sig_args_call: True if this is for a call to `rs_get_sig_args()`
     :type get_sig_args_call:  bool
     :raises ValueError: If validation fails
     """
@@ -913,6 +916,7 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     :returns: The job handle
     :rtype: CTypesData
     :raises ValueError: If there is something wrong with the provided arugments
+    :raises OSError: If there is something wrong with the provided arugments
     """
     patch_handle = _PatchHandle(basis)
     p_patch_handle = _ffi.new_handle(patch_handle)
@@ -930,11 +934,22 @@ def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
     return p_job_handle
 
 
-def get_job_stats(p_job_handle: CTypesData) -> JobStats:
+def get_job_stats(
+    p_job_handle: CTypesData,
+    in_bytes: int,
+    out_bytes: int,
+) -> JobStats:
     """Get librsync job statistics.
+
+    The in and out bytes are needed due to a C API limitation, where those
+    statistics are not updated when not using whole API.
 
     :param p_job_handle: The job handle
     :type p_job_handle: CTypesData
+    :param in_bytes: The total input bytes. Must be >= 0.
+    :type in_bytes: int
+    :param out_bytes: The total output bytes. Must be >= 0.
+    :type out_bytes: int
     :returns: The job statistics
     :rtype: JobStats
     """
@@ -947,6 +962,12 @@ def get_job_stats(p_job_handle: CTypesData) -> JobStats:
         job_type = job_type[: job_type.index(b"\x00")].decode()
     else:
         job_type = ""
+
+    msg = "{} must be >= 0"
+    if in_bytes < 0:
+        raise ValueError(msg.format("in_bytes"))
+    if out_bytes < 0:
+        raise ValueError(msg.format("out_bytes"))
 
     return JobStats(
         job_type=JobStats.JobType(job_type),
@@ -961,8 +982,8 @@ def get_job_stats(p_job_handle: CTypesData) -> JobStats:
         false_matches=raw_stats.false_matches,
         sig_blocks=raw_stats.sig_blocks,
         block_len=raw_stats.block_len,
-        in_bytes=raw_stats.in_bytes,
-        out_bytes=raw_stats.out_bytes,
+        in_bytes=in_bytes,
+        out_bytes=out_bytes,
         start_time=datetime.fromtimestamp(raw_stats.start, timezone.utc),
         completion_time=(
             datetime.fromtimestamp(raw_stats.end, timezone.utc)

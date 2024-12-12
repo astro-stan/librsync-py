@@ -4,6 +4,7 @@
 """Python bindings for the librsync library."""
 
 from librsync_py._internals import RsSignatureMagic
+from librsync_py._internals.wrappers import JobStats, MatchStats
 from librsync_py.stream import Delta, Patch, Signature
 from librsync_py.whole import delta, patch, signature
 
@@ -21,4 +22,6 @@ __all__ = [
     "signature",
     "delta",
     "patch",
+    "JobStats",
+    "MatchStats",
 ]
