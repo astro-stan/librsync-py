@@ -15,11 +15,7 @@ else:  # pragma: no cover
     from typing import Self
 
 
-class RsError(Exception):
-    """The base for all librsync exceptions."""
-
-
-class RsCApiError(RsError):
+class RsCApiError(Exception):
     """The base for all C API librsync exceptions."""
 
     RESULT = RsResult.UNKNOWN
