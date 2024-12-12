@@ -8,7 +8,7 @@ import io
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum, IntEnum
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
@@ -39,16 +39,6 @@ See :meth:`_patch_copy_callback` for more information.
 
 _global_weakkeydict = WeakKeyDictionary()
 """Used to keep nested cdata objects alive until parent cdata object is GCed"""
-
-
-class RsDeltaMagic(IntEnum):
-    """A 4-byte magic number emitted in network-order at the start of librsync files.
-
-    Used to differentiate the type of data contained in the file.
-    """
-
-    DELTA = cast(int, _lib.RS_DELTA_MAGIC)
-    """A delta file."""
 
 
 @dataclass(frozen=True)
