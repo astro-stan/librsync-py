@@ -5,14 +5,17 @@
 
 from __future__ import annotations
 
-from sys import version_info
+from typing import TYPE_CHECKING
 
 from librsync_py._internals import RsResult
 
-if version_info < (3, 11):  # pragma: no cover
-    from typing_extensions import Self
-else:  # pragma: no cover
-    from typing import Self
+if TYPE_CHECKING:
+    from sys import version_info
+
+    if version_info < (3, 11):  # pragma: no cover
+        from typing_extensions import Self
+    else:  # pragma: no cover
+        from typing import Self
 
 
 class RsCApiError(Exception):
