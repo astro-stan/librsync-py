@@ -12,8 +12,9 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
 from librsync_py.exceptions import RsCApiError
+from librsync_py.statistics import JobStatistics
 
-from . import JobStatistics, RsResult, SignatureType, _ffi, _lib
+from . import RsResult, SignatureType, _ffi, _lib
 from .common import handle_rs_result
 
 if TYPE_CHECKING:  # pragma: no cover
