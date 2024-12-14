@@ -213,7 +213,6 @@ python.install_sources(
         'src' / meson.project_name() / '_internals' / '__init__.py',
         'src' / meson.project_name() / '_internals' / 'wrappers.py',
         'src' / meson.project_name() / '_internals' / 'common.py',
-        'src' / meson.project_name() / '_internals' / 'job.py',
     ]),
     subdir: meson.project_name() / '_internals',
 )
