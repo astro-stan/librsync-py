@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from librsync_py import JobStatistics, SignatureType
 
 from ._internals.wrappers import (
-    MatchStats,
+    MatchStatistics,
     RsResult,
     build_hash_table,
     delta_begin,
@@ -774,7 +774,7 @@ class Delta(_Job):
             return get_job_stats(self._sig_job, self._sig_in_bytes, 0)
 
     @property
-    def match_stats(self: Self) -> MatchStats:
+    def match_stats(self: Self) -> MatchStatistics:
         """Get delta match statistics."""
         with self._rlock:
             self._check_signature_c_api_freed()

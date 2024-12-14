@@ -41,7 +41,7 @@ _global_weakkeydict = WeakKeyDictionary()
 
 
 @dataclass(frozen=True)
-class MatchStats:
+class MatchStatistics:
     """Delta file match statistics."""
 
     find_count: int
@@ -740,7 +740,7 @@ def delta_begin(pp_sig_handle: CTypesData) -> CTypesData:
     return _lib.rs_delta_begin(pp_sig_handle[0])
 
 
-def get_match_stats(pp_sig_handle: CTypesData) -> MatchStats:
+def get_match_stats(pp_sig_handle: CTypesData) -> MatchStatistics:
     """Get delta file generation statistics.
 
     :param pp_sig_handle: The signature handle
@@ -759,7 +759,7 @@ def get_match_stats(pp_sig_handle: CTypesData) -> MatchStats:
         raise NotImplementedError(err)
 
     if p_sig[0].hashtable == _ffi.NULL:
-        return MatchStats(
+        return MatchStatistics(
             find_count=0,
             match_count=0,
             hashcmp_count=0,
@@ -767,7 +767,7 @@ def get_match_stats(pp_sig_handle: CTypesData) -> MatchStats:
             strongsum_calc_count=0,
         )
 
-    return MatchStats(
+    return MatchStatistics(
         find_count=p_sig[0].hashtable.find_count,
         match_count=p_sig[0].hashtable.match_count,
         hashcmp_count=p_sig[0].hashtable.hashcmp_count,
