@@ -200,6 +200,7 @@ python.extension_module(
 python.install_sources(
     files([
         'src' / meson.project_name() / '__init__.py',
+        'src' / meson.project_name() / 'common.py',
         'src' / meson.project_name() / 'exceptions.py',
         'src' / meson.project_name() / 'statistics.py',
         'src' / meson.project_name() / 'stream.py',

@@ -11,10 +11,10 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
-from librsync_py import JobStatistics, JobType, MatchStatistics
+from librsync_py import JobStatistics, JobType, MatchStatistics, SignatureType
 from librsync_py.exceptions import RsCApiError, RsUnknownError
 
-from . import RsResult, SignatureType, _ffi, _lib
+from . import RsResult, _ffi, _lib
 
 if TYPE_CHECKING:  # pragma: no cover
     from types import TracebackType

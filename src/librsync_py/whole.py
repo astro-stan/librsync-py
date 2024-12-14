@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import io
 
-from ._internals import SignatureType
+from .common import SignatureType
 from .stream import Delta, Patch, Signature
 
 
