@@ -14,7 +14,8 @@ from weakref import WeakKeyDictionary
 from librsync_py import JobStatistics, JobType, MatchStatistics, SignatureType
 from librsync_py.exceptions import RsCApiError, RsUnknownError
 
-from . import RsResult, _ffi, _lib
+from . import _ffi, _lib
+from .common import RsResult
 
 if TYPE_CHECKING:  # pragma: no cover
     from types import TracebackType

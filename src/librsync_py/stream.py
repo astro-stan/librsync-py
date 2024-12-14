@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 from librsync_py import JobStatistics, MatchStatistics, SignatureType
 
+from ._internals.common import RsResult
 from ._internals.wrappers import (
-    RsResult,
     build_hash_table,
     delta_begin,
     free_job,

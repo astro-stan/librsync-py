@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from librsync_py._internals import RsResult
+from librsync_py._internals.common import RsResult
 
 if TYPE_CHECKING:
     from sys import version_info
