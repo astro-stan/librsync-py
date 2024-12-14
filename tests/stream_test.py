@@ -12,7 +12,7 @@ from time import sleep
 
 import pytest
 
-from librsync_py import Delta, JobStatistics, Patch, Signature, SignatureType
+from librsync_py import Delta, JobStatistics, JobType, Patch, Signature, SignatureType
 from librsync_py._internals import _lib
 
 
@@ -810,13 +810,13 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
     """Test job statistics."""
     if cls is Signature:
         obj = _get_signature()
-        job_type = JobStatistics.JobType.SIGNATURE
+        job_type = JobType.SIGNATURE
     elif cls is Delta:
         obj = _get_delta()
-        job_type = JobStatistics.JobType.DELTA
+        job_type = JobType.DELTA
     else:
         obj = _get_patch()
-        job_type = JobStatistics.JobType.PATCH
+        job_type = JobType.PATCH
 
     # The start time is recorded by the C API, which in turn measures
     # epoch time, so it is limited to 1s intervals. Sleep for 1 second to
@@ -850,7 +850,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
 
     if cls is Delta:
         assert isinstance(obj.signature_job_stats, JobStatistics)
-        assert obj.signature_job_stats.job_type == JobStatistics.JobType.LOAD_SIGNATURE
+        assert obj.signature_job_stats.job_type == JobType.LOAD_SIGNATURE
         assert obj.signature_job_stats.lit_cmds == 0
         assert obj.signature_job_stats.lit_bytes == 0
         assert obj.signature_job_stats.lit_cmdbytes == 0
@@ -879,7 +879,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         in_len = len(_get_delta().raw_signature.read())
 
         assert isinstance(obj.job_stats, JobStatistics)
-        assert obj.signature_job_stats.job_type == JobStatistics.JobType.LOAD_SIGNATURE
+        assert obj.signature_job_stats.job_type == JobType.LOAD_SIGNATURE
         assert obj.signature_job_stats.lit_cmds == raw_stats.lit_cmds
         assert obj.signature_job_stats.lit_bytes == raw_stats.lit_bytes
         assert obj.signature_job_stats.lit_cmdbytes == raw_stats.lit_cmdbytes

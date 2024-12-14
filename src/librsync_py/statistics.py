@@ -10,18 +10,19 @@ from datetime import datetime, timezone
 from enum import Enum
 
 
+class JobType(str, Enum):
+    """librsync job type."""
+
+    NOOP = ""
+    DELTA = "delta"
+    PATCH = "patch"
+    LOAD_SIGNATURE = "loadsig"
+    SIGNATURE = "signature"
+
+
 @dataclass(frozen=True)
 class JobStatistics:
     """librsync job statistics."""
-
-    class JobType(str, Enum):
-        """librsync job type."""
-
-        NOOP = ""
-        DELTA = "delta"
-        PATCH = "patch"
-        LOAD_SIGNATURE = "loadsig"
-        SIGNATURE = "signature"
 
     job_type: JobType
     """Human-readable name of current operation."""

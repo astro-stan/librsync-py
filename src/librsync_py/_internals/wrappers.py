@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
-from librsync_py import JobStatistics, MatchStatistics
+from librsync_py import JobStatistics, JobType, MatchStatistics
 from librsync_py.exceptions import RsCApiError
 
 from . import RsResult, SignatureType, _ffi, _lib
@@ -785,7 +785,7 @@ def get_job_stats(
         raise ValueError(msg.format("out_bytes"))
 
     return JobStatistics(
-        job_type=JobStatistics.JobType(job_type),
+        job_type=JobType(job_type),
         lit_cmds=raw_stats.lit_cmds,
         lit_bytes=raw_stats.lit_bytes,
         lit_cmdbytes=raw_stats.lit_cmdbytes,

@@ -4,7 +4,7 @@
 """Python bindings for the librsync library."""
 
 from librsync_py._internals import SignatureType
-from librsync_py.statistics import JobStatistics, MatchStatistics
+from librsync_py.statistics import JobStatistics, JobType, MatchStatistics
 from librsync_py.stream import Delta, Patch, Signature
 from librsync_py.whole import delta, patch, signature
 
@@ -17,6 +17,7 @@ __all__ = [
     "LIBRSYNC_VERSION_STR",
     "Delta",
     "JobStatistics",
+    "JobType",
     "MatchStatistics",
     "Patch",
     "Signature",
