@@ -12,10 +12,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
-from librsync_py._internals import RsResult, SignatureType
-from librsync_py.exceptions import RsCApiError, RsUnknownError
+from librsync_py.exceptions import RsCApiError
 
-from . import _ffi, _lib
+from . import RsResult, SignatureType, _ffi, _lib
+from .common import handle_rs_result
 
 if TYPE_CHECKING:  # pragma: no cover
     from types import TracebackType
@@ -353,37 +353,6 @@ def _validate_job(p_job_handle: CTypesData) -> None:
         raise ValueError(err)
 
 
-def _handle_rs_result(
-    result: int | RsResult,
-    *,
-    raise_on_non_error_results: bool = True,
-) -> RsResult:
-    """Check the operation result and raise an appropriate :class:`RsCApiError` if needed.
-
-    :param result: The result of the operation
-    :type result: Union[int, RsResult]
-    :param raise_on_non_error_results: Whether or not non-erronous results should raise
-    an :class:`RsCApiError`. NOTE: RsResult.DONE is not affected by this setting and will
-    never raise an exception.
-    :type raise_on_non_error_results: bool
-    :returns: Non-erronous RsResult
-    :rtype: RsResult
-    :raises RsCApiError: The appropriate exception subclass for the given RsResult
-    """
-    if result == RsResult.DONE:
-        return RsResult(result)
-
-    if raise_on_non_error_results and result == RsResult.BLOCKED:
-        return RsResult(result)
-
-    exc_candidates = [x for x in RsCApiError.__subclasses__() if result == x.RESULT]
-
-    if not exc_candidates:  # pragma: no cover
-        raise RsUnknownError(result)
-
-    raise exc_candidates[0]
-
-
 def _new_rs_buffers_t_p_handle(
     input_: memoryview,
     output: memoryview,
@@ -524,7 +493,7 @@ def _get_sig_args(
     else:
         p_hash_length = _ffi.new("size_t *", 2 ** (_ffi.sizeof("size_t") * 8) - 1)
 
-    _handle_rs_result(
+    handle_rs_result(
         _lib.rs_sig_args(filesize, p_sig_magic, p_block_length, p_hash_length),
         raise_on_non_error_results=False,
     )
@@ -547,7 +516,7 @@ def build_hash_table(pp_sig_handle: CTypesData) -> None:
     :raises RsCApiError: If something goes wrong while inside the C API
     """
     _validate_signature(pp_sig_handle)
-    _handle_rs_result(_lib.rs_build_hash_table(pp_sig_handle[0]))
+    handle_rs_result(_lib.rs_build_hash_table(pp_sig_handle[0]))
 
 
 def _on_patch_copy_error(handle_name: str) -> Callable:
@@ -732,7 +701,7 @@ def job_iter(
     p_buffers_handle = _new_rs_buffers_t_p_handle(input_, output, eof=eof)
 
     try:
-        result = _handle_rs_result(_lib.rs_job_iter(p_job_handle, p_buffers_handle))
+        result = handle_rs_result(_lib.rs_job_iter(p_job_handle, p_buffers_handle))
     except RsCApiError as e:
         # Patch jobs (initialised with :meth:`patch_begin`) should have
         # this arg set to an instance of :class:`_PatchHandle`.
@@ -759,7 +728,7 @@ def free_job(p_job_handle: CTypesData) -> None:
     _check_job_handle_valid(p_job_handle)
 
     try:
-        _handle_rs_result(
+        handle_rs_result(
             _lib.rs_job_free(p_job_handle),
             raise_on_non_error_results=False,
         )
