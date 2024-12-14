@@ -12,7 +12,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
-from librsync_py._internals import RsResult, RsSignatureMagic
+from librsync_py._internals import RsResult, SignatureType
 from librsync_py.exceptions import RsCApiError, RsUnknownError
 
 from . import _ffi, _lib
@@ -276,7 +276,7 @@ def _check_buffers_handle_valid(p_buffers_handle: CTypesData) -> None:
 
 
 def _validate_sig_args(
-    magic: RsSignatureMagic,
+    signature_type: SignatureType,
     block_length: int,
     hash_length: int,
     *,
@@ -286,8 +286,8 @@ def _validate_sig_args(
 
     Replicates the `rs_sig_args_check()` macro.
 
-    :param magic: The signature magic
-    :type magic: RsSignatureMagic
+    :param signature_type: The signature type
+    :type signature_type: SignatureType
     :param block_length: The signature block length
     :type block_length: int
     :param hash_length: The signature hash length
@@ -300,12 +300,12 @@ def _validate_sig_args(
 
     max_hash_length = (
         _lib.RS_MD4_SUM_LENGTH
-        if magic in (RsSignatureMagic.MD4_SIG, RsSignatureMagic.RK_MD4_SIG)
+        if signature_type in (SignatureType.MD4_SIG, SignatureType.RK_MD4_SIG)
         else _lib.RS_BLAKE2_SUM_LENGTH
     )
 
-    if magic not in iter(RsSignatureMagic):
-        err = "Invalid signature magic."
+    if signature_type not in iter(SignatureType):
+        err = "Invalid signature type."
     elif hash_length > max_hash_length:
         err = f"Signature hash length must be <={max_hash_length}"
     elif hash_length < (-1 if get_sig_args_call else 0):
@@ -479,40 +479,45 @@ def _get_job_t_copy_arg(p_job_handle: CTypesData) -> Any | None:  # noqa: ANN401
 
 def _get_sig_args(
     filesize: int = -1,
-    sig_magic: int | RsSignatureMagic = 0,
+    signature_type: int | SignatureType = 0,
     block_length: int = 0,
     hash_length: int = 0,
-) -> tuple[RsSignatureMagic, int, int]:
+) -> tuple[SignatureType, int, int]:
     """Get recommended arguments for generating a file signature.
 
     :param filesize: The size of the file. Use -1 for "unknown".
     :type filesize: int
-    :param sig_magic: The signature type. Use 0 for recommended.
-    :type sig_magic: Union[int, RsSignatureMagic]
+    :param signature_type: The signature type. Use 0 for recommended.
+    :type signature_type: Union[int, SignatureType]
     :param block_length: The signature block length. Larger values make
     a shorter signature but increase the delta size. Use 0 for recommended.
     :type block_length: int
     :param hash_length: The signature hash (strongsum) length. Smaller values
     make signatures shorter but increase the chance for corruption due to
     hash collisions. Use `0` for maximum or `-1` for minimum.
-    :returns: A 3-tuple containing the RsSignatureMagic, block_length and hash_length
+    :returns: A 3-tuple containing the SignatureType, block_length and hash_length
     in that order.
-    :rtype: tuple[RsSignatureMagic, int, int]
+    :rtype: tuple[SignatureType, int, int]
     :raises RsCApiError: If something goes wrong while inside the C API
     """
-    if sig_magic == 0:
+    if signature_type == 0:
         # Set the value the lib recommends, so that signature arg validation
         # can pass
-        sig_magic = RsSignatureMagic.RK_BLAKE2_SIG
+        signature_type = SignatureType.RK_BLAKE2_SIG
 
-    _validate_sig_args(sig_magic, block_length, hash_length, get_sig_args_call=True)
+    _validate_sig_args(
+        signature_type,
+        block_length,
+        hash_length,
+        get_sig_args_call=True,
+    )
 
     # -1 is allowed, as it means "unknown"
     if filesize < -1:
         err = "Filesize must be >= 0"
         raise ValueError(err)
 
-    p_sig_magic = _ffi.new("rs_magic_number *", sig_magic)
+    p_sig_magic = _ffi.new("rs_magic_number *", signature_type)
     p_block_length = _ffi.new("size_t *", block_length)
     if hash_length >= 0:
         p_hash_length = _ffi.new("size_t *", hash_length)
@@ -524,7 +529,7 @@ def _get_sig_args(
         raise_on_non_error_results=False,
     )
 
-    return RsSignatureMagic(p_sig_magic[0]), p_block_length[0], p_hash_length[0]
+    return SignatureType(p_sig_magic[0]), p_block_length[0], p_hash_length[0]
 
 
 def build_hash_table(pp_sig_handle: CTypesData) -> None:
@@ -765,7 +770,7 @@ def free_job(p_job_handle: CTypesData) -> None:
 
 def sig_begin(
     filesize: int = -1,
-    sig_magic: int | RsSignatureMagic = 0,
+    signature_type: int | SignatureType = 0,
     block_length: int = 0,
     hash_length: int = 0,
 ) -> CTypesData:
@@ -778,8 +783,8 @@ def sig_begin(
 
     :param filesize: The size of the file. Use -1 for "unknown"
     :type filesize: int
-    :param sig_magic: The signature type. Use 0 for recommended.
-    :type sig_magic: Union[int, RsSignatureMagic]
+    :param signature_type: The signature type. Use 0 for recommended.
+    :type signature_type: Union[int, SignatureType]
     :param block_length: The signature block length. Larger values make
     a shorter signature but increase the delta size. Use 0 for recommended.
     :type block_length: int
@@ -790,13 +795,13 @@ def sig_begin(
     :rtype: CTypesData
     :raises RsCApiError: If something goes wrong while inside the C API
     """
-    sig_magic, block_length, hash_length = _get_sig_args(
+    signature_type, block_length, hash_length = _get_sig_args(
         filesize,
-        sig_magic,
+        signature_type,
         block_length,
         hash_length,
     )
-    return _lib.rs_sig_begin(block_length, hash_length, sig_magic)
+    return _lib.rs_sig_begin(block_length, hash_length, signature_type)
 
 
 def loadsig_begin() -> tuple[CTypesData, CTypesData]:

@@ -12,7 +12,7 @@ from time import sleep
 
 import pytest
 
-from librsync_py import Delta, JobStats, Patch, RsSignatureMagic, Signature
+from librsync_py import Delta, JobStats, Patch, Signature, SignatureType
 from librsync_py._internals import _lib
 
 
@@ -121,8 +121,8 @@ def test_signature_init_fails() -> None:
     with pytest.raises(ValueError, match=r"Signature block length must be >0"):
         Signature(io.BytesIO(b""), block_length=-1)  # 0 is valid, means "recommended"
 
-    with pytest.raises(ValueError, match=r"Invalid signature magic."):
-        Signature(io.BytesIO(b""), sig_magic=1)  # 0 is valid, means "recommended"
+    with pytest.raises(ValueError, match=r"Invalid signature type."):
+        Signature(io.BytesIO(b""), signature_type=1)  # 0 is valid, means "recommended"
 
     with pytest.raises(ValueError, match=r"Signature hash length must be >=-1"):
         # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
@@ -134,7 +134,7 @@ def test_signature_init_fails() -> None:
 
     with pytest.raises(ValueError, match=r"Signature hash length must be <=16"):
         # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
-        Signature(io.BytesIO(b""), sig_magic=RsSignatureMagic.MD4_SIG, hash_length=17)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.MD4_SIG, hash_length=17)
 
 
 def test_delta_init_fails() -> None:
@@ -197,29 +197,29 @@ def test_signature_init_args() -> None:
     assert s.buffer_size == io.DEFAULT_BUFFER_SIZE
     assert s.raw is stream
 
-    # Test the signature magic is prepended by librsync
+    # Test the signature type is prepended by librsync
     assert (
         Signature(io.BytesIO(b""))
         .read()
-        .startswith(RsSignatureMagic.RK_BLAKE2_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.RK_BLAKE2_SIG.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), sig_magic=RsSignatureMagic.BLAKE2_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.BLAKE2_SIG)
         .read()
-        .startswith(RsSignatureMagic.BLAKE2_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.BLAKE2_SIG.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), sig_magic=RsSignatureMagic.RK_MD4_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.RK_MD4_SIG)
         .read()
-        .startswith(RsSignatureMagic.RK_MD4_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.RK_MD4_SIG.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), sig_magic=RsSignatureMagic.MD4_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.MD4_SIG)
         .read()
-        .startswith(RsSignatureMagic.MD4_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.MD4_SIG.to_bytes(4, byteorder="big"))
     )
 
 
@@ -969,7 +969,7 @@ def test_delta_match_stats() -> None:
 
     obj = _get_delta(Signature(io.BytesIO(text_orig)), text_new)
 
-    with pytest.raises(ValueError, match=r"Invalid signature magic."):
+    with pytest.raises(ValueError, match=r"Invalid signature type."):
         obj.match_stats  # noqa: B018
 
     obj.load_signature()

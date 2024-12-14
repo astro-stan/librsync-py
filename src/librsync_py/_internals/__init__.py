@@ -84,10 +84,10 @@ class RsResult(IntEnum):
         return f"{self.description} ({self.value})."
 
 
-class RsSignatureMagic(IntEnum):
-    """A 4-byte magic number emitted in network-order at the start of librsync files.
+class SignatureType(IntEnum):
+    """A 4-byte magic number emitted in network-order at the start of librsync signature files.
 
-    Used to differentiate the type of data contained in the file.
+    Used to differentiate the type of signature contained in a file.
     """
 
     MD4_SIG = cast(int, _lib.RS_MD4_SIG_MAGIC)
@@ -118,5 +118,5 @@ class RsSignatureMagic(IntEnum):
 
 __all__ = [
     "RsResult",
-    "RsSignatureMagic",
+    "SignatureType",
 ]

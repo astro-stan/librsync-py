@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import io
 
-from ._internals import RsSignatureMagic
+from ._internals import SignatureType
 from .stream import Delta, Patch, Signature
 
 
@@ -15,7 +15,7 @@ def signature(  # noqa: PLR0913
     basis: bytes,
     chunk_size: int = io.DEFAULT_BUFFER_SIZE,
     file_size: int | None = None,
-    sig_type: RsSignatureMagic = RsSignatureMagic.RK_BLAKE2_SIG,
+    sig_type: SignatureType = SignatureType.RK_BLAKE2_SIG,
     block_length: int = 0,
     hash_length: int = 0,
 ) -> bytes:
@@ -43,7 +43,7 @@ def signature(  # noqa: PLR0913
         raw=io.BytesIO(basis),
         buffer_size=chunk_size,
         file_size=file_size,
-        sig_magic=sig_type,
+        signature_type=sig_type,
         block_length=block_length,
         hash_length=hash_length,
     ).read()

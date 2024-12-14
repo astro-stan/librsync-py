@@ -10,7 +10,7 @@ import weakref
 from threading import RLock
 from typing import TYPE_CHECKING
 
-from ._internals import RsSignatureMagic
+from ._internals import SignatureType
 from ._internals.wrappers import (
     JobStats,
     MatchStats,
@@ -442,6 +442,8 @@ class Signature(_Job):
     :file_size: The size of the file-like object represented by the raw stream.
     Set to `None` if unknown
     :type file_size: int
+    :param signature_type: The signature type
+    :type signature_type: SignatureType
     :param block_length: The signature block length. Larger values make a
     shorter signature but increase the delta file size. Use 0 for recommended.
     :type block_length: int
@@ -456,7 +458,7 @@ class Signature(_Job):
         raw: io.RawIOBase,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
         file_size: int | None = None,
-        sig_magic: RsSignatureMagic = RsSignatureMagic.RK_BLAKE2_SIG,
+        signature_type: SignatureType = SignatureType.RK_BLAKE2_SIG,
         block_length: int = 0,
         hash_length: int = 0,
     ) -> None:
@@ -464,7 +466,7 @@ class Signature(_Job):
         super().__init__(
             sig_begin(
                 filesize=file_size or -1,
-                sig_magic=sig_magic,
+                signature_type=signature_type,
                 block_length=block_length,
                 hash_length=hash_length,
             ),

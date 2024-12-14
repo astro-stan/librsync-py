@@ -3,22 +3,22 @@
 # https://www.gnu.org/licenses/agpl-3.0.en.html
 """Tests for the whole API."""
 
-from librsync_py import RsSignatureMagic, delta, patch, signature
+from librsync_py import SignatureType, delta, patch, signature
 
 
 def test_signature() -> None:
     """Test getting a signature."""
     data = b"123" * 100
 
-    def assert_result(result: bytes, signature: RsSignatureMagic) -> None:
+    def assert_result(result: bytes, signature: SignatureType) -> None:
         assert isinstance(result, bytes)
         assert len(result) > 0
         assert result.startswith(signature.to_bytes(4, "big"))
 
-    assert_result(signature(data), RsSignatureMagic.RK_BLAKE2_SIG)
+    assert_result(signature(data), SignatureType.RK_BLAKE2_SIG)
     assert_result(
-        signature(data, sig_type=RsSignatureMagic.MD4_SIG),
-        RsSignatureMagic.MD4_SIG,
+        signature(data, sig_type=SignatureType.MD4_SIG),
+        SignatureType.MD4_SIG,
     )
 
 
