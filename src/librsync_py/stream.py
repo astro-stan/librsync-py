@@ -458,7 +458,7 @@ class Signature(_Job):
         raw: io.RawIOBase,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
         file_size: int | None = None,
-        signature_type: SignatureType = SignatureType.RK_BLAKE2_SIG,
+        signature_type: SignatureType = SignatureType.RK_BLAKE2,
         block_length: int = 0,
         hash_length: int = 0,
     ) -> None:

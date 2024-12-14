@@ -15,11 +15,8 @@ def test_signature() -> None:
         assert len(result) > 0
         assert result.startswith(signature.to_bytes(4, "big"))
 
-    assert_result(signature(data), SignatureType.RK_BLAKE2_SIG)
-    assert_result(
-        signature(data, sig_type=SignatureType.MD4_SIG),
-        SignatureType.MD4_SIG,
-    )
+    assert_result(signature(data), SignatureType.RK_BLAKE2)
+    assert_result(signature(data, sig_type=SignatureType.MD4), SignatureType.MD4)
 
 
 def test_delta() -> None:

@@ -210,7 +210,7 @@ def _validate_sig_args(
 
     max_hash_length = (
         _lib.RS_MD4_SUM_LENGTH
-        if signature_type in (SignatureType.MD4_SIG, SignatureType.RK_MD4_SIG)
+        if signature_type in (SignatureType.MD4, SignatureType.RK_MD4)
         else _lib.RS_BLAKE2_SUM_LENGTH
     )
 
@@ -382,7 +382,7 @@ def _get_sig_args(
     if signature_type == 0:
         # Set the value the lib recommends, so that signature arg validation
         # can pass
-        signature_type = SignatureType.RK_BLAKE2_SIG
+        signature_type = SignatureType.RK_BLAKE2
 
     _validate_sig_args(
         signature_type,

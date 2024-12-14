@@ -134,7 +134,7 @@ def test_signature_init_fails() -> None:
 
     with pytest.raises(ValueError, match=r"Signature hash length must be <=16"):
         # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
-        Signature(io.BytesIO(b""), signature_type=SignatureType.MD4_SIG, hash_length=17)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.MD4, hash_length=17)
 
 
 def test_delta_init_fails() -> None:
@@ -201,25 +201,25 @@ def test_signature_init_args() -> None:
     assert (
         Signature(io.BytesIO(b""))
         .read()
-        .startswith(SignatureType.RK_BLAKE2_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.RK_BLAKE2.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), signature_type=SignatureType.BLAKE2_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.BLAKE2)
         .read()
-        .startswith(SignatureType.BLAKE2_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.BLAKE2.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), signature_type=SignatureType.RK_MD4_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.RK_MD4)
         .read()
-        .startswith(SignatureType.RK_MD4_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.RK_MD4.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), signature_type=SignatureType.MD4_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.MD4)
         .read()
-        .startswith(SignatureType.MD4_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.MD4.to_bytes(4, byteorder="big"))
     )
 
 

@@ -15,7 +15,7 @@ def signature(  # noqa: PLR0913
     basis: bytes,
     chunk_size: int = io.DEFAULT_BUFFER_SIZE,
     file_size: int | None = None,
-    sig_type: SignatureType = SignatureType.RK_BLAKE2_SIG,
+    sig_type: SignatureType = SignatureType.RK_BLAKE2,
     block_length: int = 0,
     hash_length: int = 0,
 ) -> bytes:
