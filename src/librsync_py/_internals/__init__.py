@@ -7,7 +7,7 @@ from enum import IntEnum
 from sys import version_info
 from typing import cast
 
-from .job import JobStats
+from .job import JobStatistics
 
 if version_info < (3, 11):  # pragma: no cover
     from typing_extensions import Self
@@ -119,7 +119,7 @@ class SignatureType(IntEnum):
 
 
 __all__ = [
-    "JobStats",
+    "JobStatistics",
     "RsResult",
     "SignatureType",
 ]

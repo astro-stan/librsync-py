@@ -13,7 +13,7 @@ from weakref import WeakKeyDictionary
 
 from librsync_py.exceptions import RsCApiError
 
-from . import JobStats, RsResult, SignatureType, _ffi, _lib
+from . import JobStatistics, RsResult, SignatureType, _ffi, _lib
 from .common import handle_rs_result
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -812,7 +812,7 @@ def get_job_stats(
     p_job_handle: CTypesData,
     in_bytes: int,
     out_bytes: int,
-) -> JobStats:
+) -> JobStatistics:
     """Get librsync job statistics.
 
     The in and out bytes are needed due to a C API limitation, where those
@@ -843,8 +843,8 @@ def get_job_stats(
     if out_bytes < 0:
         raise ValueError(msg.format("out_bytes"))
 
-    return JobStats(
-        job_type=JobStats.JobType(job_type),
+    return JobStatistics(
+        job_type=JobStatistics.JobType(job_type),
         lit_cmds=raw_stats.lit_cmds,
         lit_bytes=raw_stats.lit_bytes,
         lit_cmdbytes=raw_stats.lit_cmdbytes,

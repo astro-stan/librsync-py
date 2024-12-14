@@ -36,9 +36,7 @@ def test_delta() -> None:
         assert len(result) > 0
 
     assert_result(delta(signature(old_data), data))
-    assert_result(
-        delta(io.BytesIO(signature(io.BytesIO(old_data))), io.BytesIO(data))
-    )
+    assert_result(delta(io.BytesIO(signature(io.BytesIO(old_data))), io.BytesIO(data)))
 
 
 def test_patch() -> None:
@@ -52,4 +50,9 @@ def test_patch() -> None:
         assert result == data
 
     assert_result(patch(old_data, delta(signature(old_data), data)))
-    assert_result(patch(io.BytesIO(old_data), delta(io.BytesIO(signature(io.BytesIO(old_data))), io.BytesIO(data))))
+    assert_result(
+        patch(
+            io.BytesIO(old_data),
+            delta(io.BytesIO(signature(io.BytesIO(old_data))), io.BytesIO(data)),
+        )
+    )

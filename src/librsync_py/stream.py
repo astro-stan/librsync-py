@@ -10,7 +10,7 @@ import weakref
 from threading import RLock
 from typing import TYPE_CHECKING
 
-from librsync_py import JobStats, SignatureType
+from librsync_py import JobStatistics, SignatureType
 
 from ._internals.wrappers import (
     MatchStats,
@@ -392,7 +392,7 @@ class _Job(io.BufferedIOBase):
             return self.raw.mode
 
     @property
-    def job_stats(self: Self) -> JobStats:
+    def job_stats(self: Self) -> JobStatistics:
         """Get job statistics."""
         with self._rlock:
             self._check_c_api_freed()
@@ -760,14 +760,14 @@ class Delta(_Job):
             return self.raw_signature.closed
 
     @property
-    def job_stats(self: Self) -> JobStats:
+    def job_stats(self: Self) -> JobStatistics:
         """Get job statistics."""
         with self._rlock:
             self._check_signature_loaded()
             return super().job_stats
 
     @property
-    def signature_job_stats(self: Self) -> JobStats:
+    def signature_job_stats(self: Self) -> JobStatistics:
         """Get load signature job statistics."""
         with self._rlock:
             self._check_signature_job_c_api_freed()

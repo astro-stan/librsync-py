@@ -3,7 +3,7 @@
 # https://www.gnu.org/licenses/agpl-3.0.en.html
 """Python bindings for the librsync library."""
 
-from librsync_py._internals import JobStats, SignatureType
+from librsync_py._internals import JobStatistics, SignatureType
 from librsync_py._internals.wrappers import MatchStats
 from librsync_py.stream import Delta, Patch, Signature
 from librsync_py.whole import delta, patch, signature
@@ -16,7 +16,7 @@ LIBRSYNC_VERSION_STR: str = _get_lib_version_str()
 __all__ = [
     "LIBRSYNC_VERSION_STR",
     "Delta",
-    "JobStats",
+    "JobStatistics",
     "MatchStats",
     "Patch",
     "Signature",

@@ -9,7 +9,7 @@ from enum import Enum
 
 
 @dataclass(frozen=True)
-class JobStats:
+class JobStatistics:
     """librsync job statistics."""
 
     class JobType(str, Enum):
