@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
+from librsync_py import JobStatistics, MatchStatistics
 from librsync_py.exceptions import RsCApiError
-from librsync_py.statistics import JobStatistics
 
 from . import RsResult, SignatureType, _ffi, _lib
 from .common import handle_rs_result
@@ -39,66 +39,6 @@ See :meth:`_patch_copy_callback` for more information.
 
 _global_weakkeydict = WeakKeyDictionary()
 """Used to keep nested cdata objects alive until parent cdata object is GCed"""
-
-
-@dataclass(frozen=True)
-class MatchStatistics:
-    """Delta file match statistics."""
-
-    find_count: int
-    """The number of finds tried."""
-    match_count: int
-    """The number of matches found."""
-    hashcmp_count: int
-    """The number of hash compares done."""
-    entrycmp_count: int
-    """The number of entry compares done."""
-    strongsum_calc_count: int
-    """The number of strong sum calculations done."""
-
-    @property
-    def weaksumcmp_count(self) -> int:
-        """The number of weak sum compares done."""
-        return self.hashcmp_count
-
-    @property
-    def strongsumcmp_count(self) -> int:
-        """The number of strong sum compares done."""
-        return self.entrycmp_count
-
-    @property
-    def hashcmp_ratio(self) -> float:
-        """The ratio of hash to total compares done."""
-        return float(self.hashcmp_count / (self.find_count or 1))
-
-    @property
-    def weaksumcmp_ratio(self) -> float:
-        """The ratio of weak sum to total compares done."""
-        return self.hashcmp_ratio
-
-    @property
-    def entrycmp_ratio(self) -> float:
-        """The ratio of entry to total compares done."""
-        return float(self.entrycmp_count / (self.find_count or 1))
-
-    @property
-    def strongsumcmp_ratio(self) -> float:
-        """The ratio of strong sum to total compares done."""
-        return self.entrycmp_ratio
-
-    @property
-    def match_ratio(self) -> float:
-        """The match ratio.
-
-        For signatures with equal block and hash lengths, higher match ratio
-        results in smaller delta file sizes.
-        """
-        return float(self.match_count / (self.find_count or 1))
-
-    @property
-    def strongsum_calc_ratio(self) -> float:
-        """The ratio of strong sum to total calculations done."""
-        return float(self.strongsum_calc_count / (self.find_count or 1))
 
 
 @dataclass
