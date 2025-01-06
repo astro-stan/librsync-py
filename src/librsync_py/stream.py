@@ -12,19 +12,8 @@ from typing import TYPE_CHECKING
 
 from librsync_py import JobStatistics, MatchStatistics, SignatureType
 
-from ._internals.common import RsResult
-from ._internals.wrappers import (
-    build_hash_table,
-    delta_begin,
-    free_job,
-    free_sig,
-    get_job_stats,
-    get_match_stats,
-    job_iter,
-    loadsig_begin,
-    patch_begin,
-    sig_begin,
-)
+from ._internals import wrappers as _wrappers
+from ._internals.common import RsResult as _RsResult
 
 if TYPE_CHECKING:  # pragma: no cover
     from array import array
@@ -46,10 +35,11 @@ class _Job(io.BufferedIOBase):
     which can be read to get the processed data. Note however, that in contrast
     to `io.BufferedReader`, this object is not seekable.
 
-    :param job: A librsync job primitive, created with `sig_begin`,
-    `loadsig_begin`, `delta_begin` or `patch_begin`. Its lifecycle will be
-    managed by this object. When it is GC-ed, or when the raw stream has
-    been closed or detached, the primitive will be freed with :meth:`free_job`
+    :param job: A librsync job primitive, created with :meth:`_wrappers.sig_begin`,
+    :meth:`_wrappers.loadsig_begin`, :meth:`_wrappers.delta_begin` or
+    meth:`_wrappers.patch_begin`. Its lifecycle will be managed by this object.
+    When it is GC-ed, or when the raw stream has been closed or detached, the
+    primitive will be freed with :meth:`_wrappers.free_job`
     :type job: CTypesData
     :param raw: The raw data stream
     :type raw: io.RawIOBase
@@ -224,9 +214,9 @@ class _Job(io.BufferedIOBase):
             # Chunk output buffer
             chunk_buffer = bytearray(max(self.buffer_size, len(buffer)))
 
-            result = RsResult.BLOCKED
+            result = _RsResult.BLOCKED
             with memoryview(chunk_buffer) as mv:
-                while result == RsResult.BLOCKED:
+                while result == _RsResult.BLOCKED:
                     result, written = self._process_raw(mv, read1=read1)
                     chunks.append(mv[:written].tobytes())
                     total_length += written
@@ -272,9 +262,9 @@ class _Job(io.BufferedIOBase):
             # Chunk output buffer
             chunk_buffer = bytearray(max(self.buffer_size, size))
 
-            result = RsResult.BLOCKED
+            result = _RsResult.BLOCKED
             with memoryview(chunk_buffer) as mv:
-                while result == RsResult.BLOCKED:
+                while result == _RsResult.BLOCKED:
                     result, written = self._process_raw(mv, read1=read1)
                     chunks.append(mv[:written].tobytes())
                     total_length += written
@@ -297,7 +287,7 @@ class _Job(io.BufferedIOBase):
         buf: memoryview,
         *,
         read1: bool = False,
-    ) -> tuple[RsResult, int]:
+    ) -> tuple[_RsResult, int]:
         """Process and read from the raw stream into a buffer.
 
         :param buf: The buffer to store the read data into
@@ -305,15 +295,15 @@ class _Job(io.BufferedIOBase):
         :param read1: True to perform at most 1 read() system call
         :type read1: bool
         :returns: The result of the operation and the bytes written to the buffer
-        :rtype: tuple[RsResult, int]
+        :rtype: tuple[_RsResult, int]
         :raises RsCApiError: If something goes wrong during the read
         :raises ValueError: If input param validation fails
         """
         out_pos = 0
         out_cap = len(buf)
 
-        result = RsResult.BLOCKED
-        while result == RsResult.BLOCKED and out_cap > 0:
+        result = _RsResult.BLOCKED
+        while result == _RsResult.BLOCKED and out_cap > 0:
             chunk = self.raw.read(max(out_cap - len(self._raw_buf), 0))
             self._in_bytes += len(chunk)
 
@@ -321,7 +311,7 @@ class _Job(io.BufferedIOBase):
             cap = len(self._raw_buf)
 
             with memoryview(self._raw_buf) as ib:
-                result, read, written = job_iter(
+                result, read, written = _wrappers.job_iter(
                     self._job,
                     ib,
                     buf[out_pos:],
@@ -357,7 +347,7 @@ class _Job(io.BufferedIOBase):
         if not hasattr(self, "_job"):
             return
         if self._job:
-            free_job(self._job)
+            _wrappers.free_job(self._job)
             self._job = None
 
     def _check_c_api_freed(self: Self) -> None:
@@ -395,7 +385,7 @@ class _Job(io.BufferedIOBase):
         """Get job statistics."""
         with self._rlock:
             self._check_c_api_freed()
-            return get_job_stats(self._job, self._in_bytes, self._out_bytes)
+            return _wrappers.get_job_stats(self._job, self._in_bytes, self._out_bytes)
 
     def __del__(self) -> None:
         """Deallocate the object."""
@@ -463,7 +453,7 @@ class Signature(_Job):
     ) -> None:
         """Create the object."""
         super().__init__(
-            sig_begin(
+            _wrappers.sig_begin(
                 filesize=file_size or -1,
                 signature_type=signature_type,
                 block_length=block_length,
@@ -505,7 +495,7 @@ class Delta(_Job):
         self._raw_sig = sig_raw
         self._sig_loaded = False
         self._sig_buf = b""
-        self._sig, self._sig_job = loadsig_begin()
+        self._sig, self._sig_job = _wrappers.loadsig_begin()
 
         # Used for statistics
         self._sig_in_bytes = 0
@@ -645,10 +635,10 @@ class Delta(_Job):
             return 0
 
         output = bytearray()  # loading signatures produces no output
-        result = RsResult.BLOCKED
+        result = _RsResult.BLOCKED
         total_read = 0
         with memoryview(output) as out_mv:
-            while result == RsResult.BLOCKED:
+            while result == _RsResult.BLOCKED:
                 if len(self._sig_buf) < max(self.buffer_size, chunk_size):
                     chunk = self._raw_sig.read(
                         max(self.buffer_size, chunk_size) - len(self._sig_buf)
@@ -658,7 +648,7 @@ class Delta(_Job):
                     self._sig_buf += chunk
 
                 with memoryview(self._sig_buf) as in_mv:
-                    result, read, _ = job_iter(
+                    result, read, _ = _wrappers.job_iter(
                         self._sig_job,
                         in_mv[: size if size > 0 else len(self._sig_buf)],
                         out_mv,
@@ -678,10 +668,10 @@ class Delta(_Job):
                 if (size > -1 and total_read >= size) or load1:
                     break
 
-        if result == RsResult.DONE:
-            build_hash_table(self._sig)  # Index the signature
+        if result == _RsResult.DONE:
+            _wrappers.build_hash_table(self._sig)  # Index the signature
             # Create the delta job
-            self._job = delta_begin(self._sig)
+            self._job = _wrappers.delta_begin(self._sig)
             self._sig_loaded = True
 
         return total_read
@@ -715,7 +705,7 @@ class Delta(_Job):
         if not hasattr(self, "_sig"):
             return
         if self._sig:
-            free_sig(self._sig)
+            _wrappers.free_sig(self._sig)
             self._sig = None
 
     def _free_signature_job_c_api_resources(self: Self) -> None:
@@ -725,7 +715,7 @@ class Delta(_Job):
         if not hasattr(self, "_sig_job"):
             return
         if self._sig_job:
-            free_job(self._sig_job)
+            _wrappers.free_job(self._sig_job)
             self._sig_job = None
 
     def _check_signature_c_api_freed(self: Self) -> None:
@@ -770,14 +760,14 @@ class Delta(_Job):
         """Get load signature job statistics."""
         with self._rlock:
             self._check_signature_job_c_api_freed()
-            return get_job_stats(self._sig_job, self._sig_in_bytes, 0)
+            return _wrappers.get_job_stats(self._sig_job, self._sig_in_bytes, 0)
 
     @property
     def match_stats(self: Self) -> MatchStatistics:
         """Get delta match statistics."""
         with self._rlock:
             self._check_signature_c_api_freed()
-            return get_match_stats(self._sig)
+            return _wrappers.get_match_stats(self._sig)
 
     def __del__(self: Self) -> None:
         """Deallocate the object."""
@@ -818,7 +808,7 @@ class Patch(_Job):
         """Create the object."""
         self._raw_basis = basis_raw
         super().__init__(
-            job=patch_begin(self._raw_basis),
+            job=_wrappers.patch_begin(self._raw_basis),
             raw=delta_raw,
             buffer_size=buffer_size,
         )
