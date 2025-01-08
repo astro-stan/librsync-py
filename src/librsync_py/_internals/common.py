@@ -39,8 +39,8 @@ class RsResult(IntEnum):
     )
     BAD_MAGIC = (
         cast(int, _lib.RS_BAD_MAGIC),
-        "Bad magic number at start of stream. Probably not a "
-        "librsync file, or possibly the wrong kind of file or from an incompatible library version",
+        "Bad magic number at start of stream. Probably not a librsync file, or "
+        "possibly the wrong kind of file or from an incompatible library version",
     )
     UNIMPLEMENTED = (
         cast(int, _lib.RS_UNIMPLEMENTED),
