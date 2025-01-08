@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from librsync_py._internals.common import RsResult
+from librsync_py._internals.common import Result
 
 if TYPE_CHECKING:
     from sys import version_info
@@ -21,14 +21,14 @@ if TYPE_CHECKING:
 class RsCApiError(Exception):
     """The base for all C API librsync exceptions."""
 
-    RESULT = RsResult.UNKNOWN
+    RESULT = Result.UNKNOWN
 
     def __init__(self: Self) -> None:
         """Initialise the exception."""
-        super().__init__(RsResult(self.RESULT))
+        super().__init__(Result(self.RESULT))
 
     @property
-    def result(self: Self) -> RsResult:
+    def result(self: Self) -> Result:
         """Get the exception result code."""
         return self.args[0]
 
@@ -36,67 +36,67 @@ class RsCApiError(Exception):
 class RsUnknownError(RsCApiError):
     """Unknown librsync error."""
 
-    def __init__(self: Self, result: int | RsResult | None = None) -> None:
+    def __init__(self: Self, result: int | Result | None = None) -> None:
         """Initialise an unknown error with a given status code."""
-        self.RESULT = RsResult(result or self.RESULT)
+        self.RESULT = Result(result or self.RESULT)
         super().__init__()
 
 
 class RsBlockedError(RsCApiError):
     """Operation failed due to being blocked waiting for more data."""
 
-    RESULT = RsResult.BLOCKED
+    RESULT = Result.BLOCKED
 
 
 class RsRunningError(RsCApiError):
     """Operation failed due to a job still running and not finished/blocked."""
 
-    RESULT = RsResult.RUNNING
+    RESULT = Result.RUNNING
 
 
 class RsIoError(RsCApiError):
     """Operation failed due to error in file or network IO."""
 
-    RESULT = RsResult.IO_ERROR
+    RESULT = Result.IO_ERROR
 
 
 class RsSyntaxError(RsCApiError):
     """Operation failed due to a command line syntax error."""
 
-    RESULT = RsResult.SYNTAX_ERROR
+    RESULT = Result.SYNTAX_ERROR
 
 
 class RsMemoryError(RsCApiError):
     """Operation failed due to running out of memory."""
 
-    RESULT = RsResult.MEMORY_ERROR
+    RESULT = Result.MEMORY_ERROR
 
 
 class RsInputEndedError(RsCApiError):
     """Operation failed due to reaching the end of an input file unexpectedly."""
 
-    RESULT = RsResult.INPUT_ENDED
+    RESULT = Result.INPUT_ENDED
 
 
 class RsBadMagicError(RsCApiError):
     """Operation failed due to a bad magic number at the start of a stream."""
 
-    RESULT = RsResult.BAD_MAGIC
+    RESULT = Result.BAD_MAGIC
 
 
 class RsUnimplementedError(RsCApiError):
     """Operation failed due to functionality not being implemented yet."""
 
-    RESULT = RsResult.UNIMPLEMENTED
+    RESULT = Result.UNIMPLEMENTED
 
 
 class RsInternalError(RsCApiError):
     """Operation failed due to an internal library error. This is likely a library bug."""
 
-    RESULT = RsResult.INTERNAL_ERROR
+    RESULT = Result.INTERNAL_ERROR
 
 
 class RsParamError(RsCApiError):
     """Operation failed due to a bad value being passed to the library. May also be a library bug."""
 
-    RESULT = RsResult.PARAM_ERROR
+    RESULT = Result.PARAM_ERROR

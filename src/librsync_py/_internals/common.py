@@ -18,7 +18,7 @@ if TYPE_CHECKING:
         from typing import Self
 
 
-class RsResult(IntEnum):
+class Result(IntEnum):
     """librsync status codes returned by the C API."""
 
     DONE = (cast(int, _lib.RS_DONE), "Completed successfully")
@@ -69,12 +69,12 @@ class RsResult(IntEnum):
         return obj
 
     @classmethod
-    def _missing_(cls: type[Self], value: object) -> RsResult:
+    def _missing_(cls: type[Self], value: object) -> Result:
         # Return an `UNKNOWN` exception type but keep use the actual status
         unknown_enum_val = int.__new__(cls, value)  # type: ignore[call-overload]
-        unknown_enum_val._name_ = RsResult.UNKNOWN.name
+        unknown_enum_val._name_ = Result.UNKNOWN.name
         unknown_enum_val._value_ = value
-        unknown_enum_val._description_ = RsResult.UNKNOWN.description
+        unknown_enum_val._description_ = Result.UNKNOWN.description
         return unknown_enum_val
 
     def __str__(self: Self) -> str:

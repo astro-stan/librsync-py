@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from librsync_py import JobStatistics, MatchStatistics, SignatureType
 
 from ._internals import wrappers as _wrappers
-from ._internals.common import RsResult as _RsResult
+from ._internals.common import Result as _RsResult
 
 if TYPE_CHECKING:  # pragma: no cover
     from array import array

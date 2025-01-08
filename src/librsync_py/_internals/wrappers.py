@@ -15,7 +15,7 @@ from librsync_py import JobStatistics, JobType, MatchStatistics, SignatureType
 from librsync_py.exceptions import RsCApiError, RsUnknownError
 
 from . import _ffi, _lib
-from .common import RsResult
+from .common import Result
 
 if TYPE_CHECKING:  # pragma: no cover
     from types import TracebackType
@@ -298,10 +298,10 @@ def _get_job_t_copy_arg(p_job_handle: CTypesData) -> Any | None:  # noqa: ANN401
 
 
 def _handle_rs_result(
-    result: int | RsResult,
+    result: int | Result,
     *,
     raise_on_non_error_results: bool = True,
-) -> RsResult:
+) -> Result:
     """Check the operation result and raise an appropriate :class:`RsCApiError` if needed.
 
     :param result: The result of the operation
@@ -314,11 +314,11 @@ def _handle_rs_result(
     :rtype: RsResult
     :raises RsCApiError: The appropriate exception subclass for the given RsResult
     """
-    if result == RsResult.DONE:
-        return RsResult(result)
+    if result == Result.DONE:
+        return Result(result)
 
-    if raise_on_non_error_results and result == RsResult.BLOCKED:
-        return RsResult(result)
+    if raise_on_non_error_results and result == Result.BLOCKED:
+        return Result(result)
 
     exc_candidates = [x for x in RsCApiError.__subclasses__() if result == x.RESULT]
 
@@ -446,7 +446,7 @@ def _on_patch_copy_error(handle_name: str) -> Callable:
 
 
 @_ffi.def_extern(
-    error=RsResult.IO_ERROR,  # Return this from the callback if an exception is raised.
+    error=Result.IO_ERROR,  # Return this from the callback if an exception is raised.
     onerror=_on_patch_copy_error("p_opaque"),  # Handle any raised exceptions
 )
 def _patch_copy_callback(
@@ -454,7 +454,7 @@ def _patch_copy_callback(
     pos: int,
     p_len: CTypesData,
     pp_buf: CTypesData,
-) -> RsResult:
+) -> Result:
     """Copy data from a basis file during a patching iteration.
 
     Invoked from the C API during a call to :meth:`job_iter`.
@@ -508,13 +508,13 @@ def _patch_copy_callback(
     p_len[0] = len(data)
 
     if len(data) == 0:
-        return RsResult.INPUT_ENDED
+        return Result.INPUT_ENDED
 
     # Copy the data to the buffer
     c_buffer = _ffi.buffer(pp_buf[0], len(data))
     c_buffer[:] = data
 
-    return RsResult.DONE
+    return Result.DONE
 
 
 def free_job(p_job_handle: CTypesData) -> None:
@@ -683,7 +683,7 @@ def job_iter(
     output: memoryview,
     *,
     eof: bool = False,
-) -> tuple[RsResult, int, int]:
+) -> tuple[Result, int, int]:
     """Run a single iteration of a given job.
 
     Calls `rs_job_iter` once and passes it the data inside the `input_` buffer.
