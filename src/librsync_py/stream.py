@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from librsync_py import JobStatistics, MatchStatistics, SignatureType
 
 from ._internals import wrappers as _wrappers
-from ._internals.common import Result as _RsResult
+from .exceptions import Result
 
 if TYPE_CHECKING:  # pragma: no cover
     from array import array
@@ -214,9 +214,9 @@ class _Job(io.BufferedIOBase):
             # Chunk output buffer
             chunk_buffer = bytearray(max(self.buffer_size, len(buffer)))
 
-            result = _RsResult.BLOCKED
+            result = Result.BLOCKED
             with memoryview(chunk_buffer) as mv:
-                while result == _RsResult.BLOCKED:
+                while result == Result.BLOCKED:
                     result, written = self._process_raw(mv, read1=read1)
                     chunks.append(mv[:written].tobytes())
                     total_length += written
@@ -262,9 +262,9 @@ class _Job(io.BufferedIOBase):
             # Chunk output buffer
             chunk_buffer = bytearray(max(self.buffer_size, size))
 
-            result = _RsResult.BLOCKED
+            result = Result.BLOCKED
             with memoryview(chunk_buffer) as mv:
-                while result == _RsResult.BLOCKED:
+                while result == Result.BLOCKED:
                     result, written = self._process_raw(mv, read1=read1)
                     chunks.append(mv[:written].tobytes())
                     total_length += written
@@ -287,7 +287,7 @@ class _Job(io.BufferedIOBase):
         buf: memoryview,
         *,
         read1: bool = False,
-    ) -> tuple[_RsResult, int]:
+    ) -> tuple[Result, int]:
         """Process and read from the raw stream into a buffer.
 
         :param buf: The buffer to store the read data into
@@ -295,15 +295,15 @@ class _Job(io.BufferedIOBase):
         :param read1: True to perform at most 1 read() system call
         :type read1: bool
         :returns: The result of the operation and the bytes written to the buffer
-        :rtype: tuple[_RsResult, int]
+        :rtype: tuple[Result, int]
         :raises RsCApiError: If something goes wrong during the read
         :raises ValueError: If input param validation fails
         """
         out_pos = 0
         out_cap = len(buf)
 
-        result = _RsResult.BLOCKED
-        while result == _RsResult.BLOCKED and out_cap > 0:
+        result = Result.BLOCKED
+        while result == Result.BLOCKED and out_cap > 0:
             chunk = self.raw.read(max(out_cap - len(self._raw_buf), 0))
             self._in_bytes += len(chunk)
 
@@ -635,10 +635,10 @@ class Delta(_Job):
             return 0
 
         output = bytearray()  # loading signatures produces no output
-        result = _RsResult.BLOCKED
+        result = Result.BLOCKED
         total_read = 0
         with memoryview(output) as out_mv:
-            while result == _RsResult.BLOCKED:
+            while result == Result.BLOCKED:
                 if len(self._sig_buf) < max(self.buffer_size, chunk_size):
                     chunk = self._raw_sig.read(
                         max(self.buffer_size, chunk_size) - len(self._sig_buf)
@@ -668,7 +668,7 @@ class Delta(_Job):
                 if (size > -1 and total_read >= size) or load1:
                     break
 
-        if result == _RsResult.DONE:
+        if result == Result.DONE:
             _wrappers.build_hash_table(self._sig)  # Index the signature
             # Create the delta job
             self._job = _wrappers.delta_begin(self._sig)
