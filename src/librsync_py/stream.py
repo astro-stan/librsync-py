@@ -16,13 +16,13 @@ from ._internals import wrappers as _wrappers
 from .exceptions import Result
 
 if TYPE_CHECKING:  # pragma: no cover
-    from array import array
     from sys import version_info
     from typing import Any
 
     if version_info < (3, 11):  # pragma: no cover
-        from typing_extensions import Self
+        from typing_extensions import Buffer, Self
     else:  # pragma: no cover
+        from collections.abc import Buffer
         from typing import Self
 
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
@@ -52,7 +52,7 @@ class _Job(io.BufferedIOBase):
     def __init__(
         self: Self,
         job: CTypesData,
-        raw: io.RawIOBase,
+        raw: io.RawIOBase | io.BytesIO,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
@@ -124,11 +124,11 @@ class _Job(io.BufferedIOBase):
             self._check_c_api_freed()
             return self._read(size, read1=True)
 
-    def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:
+    def readinto(self: Self, buffer: Buffer) -> int:
         """Process and read up to size bytes into a buffer.
 
         :param buffer: The buffer to store the read data into
-        :type buffer: Union[bytearray, memoryview, array]
+        :type buffer: Buffer
         :returns: The size of the read data in bytes. May be smaller than the
         buffer length
         :rtype: int
@@ -141,11 +141,11 @@ class _Job(io.BufferedIOBase):
             self._check_c_api_freed()
             return self._readinto(buffer, read1=False)
 
-    def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:
+    def readinto1(self: Self, buffer: Buffer) -> int:
         """Process and read up to size bytes into a buffer while performing at most 1 read() system call.
 
         :param buffer: The buffer to store the read data into
-        :type buffer: Union[bytearray, memoryview, array]
+        :type buffer: Buffer
         :returns: The size of the read data in bytes. May be smaller than the
         buffer length
         :rtype: int
@@ -167,27 +167,22 @@ class _Job(io.BufferedIOBase):
             self._close()
             self._free_c_api_resources()
 
-    def detach(self: Self) -> io.RawIOBase:
+    def detach(self: Self) -> io.RawIOBase | io.BytesIO:  # type: ignore[override]
         """Detach from the underlying stream and return it.
 
         :raises ValueError: If the reader is in an invalid state or already
         detached.
         """
         with self._rlock:
-            if self.raw is None:
+            if self._raw is None:
                 msg = "raw stream already detached"
                 raise ValueError(msg)
             raw = self._raw
-            self._raw = None
+            self._raw = None  # type: ignore[assignment]
             self._free_c_api_resources()
             return raw
 
-    def _readinto(
-        self: Self,
-        buffer: bytearray | memoryview | array,
-        *,
-        read1: bool = False,
-    ) -> int:
+    def _readinto(self: Self, buffer: Buffer, *, read1: bool = False) -> int:
         """Process and read up to len(buffer) bytes into buffer.
 
         :param buffer: The buffer to read data into.
@@ -208,7 +203,7 @@ class _Job(io.BufferedIOBase):
 
         # Slow route - read data from the stream and process it
         if len(self._buf) < len(buffer):
-            chunks = [self._buf]
+            chunks: list[Buffer] = [self._buf]
             total_length = len(self._buf)
 
             # Chunk output buffer
@@ -256,7 +251,7 @@ class _Job(io.BufferedIOBase):
 
         # Slow route - read data from the stream and process it
         if len(self._buf) < size or size < 0:
-            chunks = [self._buf]
+            chunks: list[Buffer] = [self._buf]
             total_length = len(self._buf)
 
             # Chunk output buffer
@@ -357,7 +352,7 @@ class _Job(io.BufferedIOBase):
             raise ValueError(msg)
 
     @property
-    def raw(self: Self) -> io.RawIOBase:
+    def raw(self: Self) -> io.RawIOBase | io.BytesIO:
         """Get the underlying raw stream."""
         with self._rlock:
             return self._raw
@@ -372,13 +367,13 @@ class _Job(io.BufferedIOBase):
     def name(self: Self) -> str:
         """Get name."""
         with self._rlock:
-            return self.raw.name
+            return self.raw.name  # type: ignore[union-attr]
 
     @property
     def mode(self: Self) -> str:
         """Get mode."""
         with self._rlock:
-            return self.raw.mode
+            return self.raw.mode  # type: ignore[union-attr]
 
     @property
     def job_stats(self: Self) -> JobStatistics:
@@ -423,7 +418,7 @@ class Signature(_Job):
     to `io.BufferedReader`, this object is not seekable.
 
     :param raw: The source stream
-    :type raw: io.RawIOBase
+    :type raw: Union[io.RawIOBase, io.BytesIO]
     :param buffer_size: The size of the cache buffer in bytes. For files above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -444,7 +439,7 @@ class Signature(_Job):
 
     def __init__(  # noqa: PLR0913
         self: Self,
-        raw: io.RawIOBase,
+        raw: io.RawIOBase | io.BytesIO,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
         file_size: int | None = None,
         signature_type: SignatureType = SignatureType.RK_BLAKE2,
@@ -472,9 +467,9 @@ class Delta(_Job):
     to `io.BufferedReader`, this object is not seekable.
 
     :param sig_raw: The source signature stream
-    :type sig_raw: io.RawIOBase
+    :type sig_raw: Union[io.RawIOBase, io.BytesIO]
     :param basis_raw: The source basis stream
-    :type basis_raw: io.RawIOBase
+    :type basis_raw: Union[io.RawIOBase, io.BytesIO]
     :param buffer_size: The size of the cache buffer in bytes. For files above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -483,8 +478,8 @@ class Delta(_Job):
 
     def __init__(
         self: Self,
-        sig_raw: io.RawIOBase,
-        basis_raw: io.RawIOBase,
+        sig_raw: io.RawIOBase | io.BytesIO,
+        basis_raw: io.RawIOBase | io.BytesIO,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
@@ -563,17 +558,17 @@ class Delta(_Job):
             self._check_signature_loaded()
             return super().read1(size)
 
-    def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:  # noqa: D102
+    def readinto(self: Self, buffer: Buffer) -> int:  # noqa: D102
         with self._rlock:
             self._check_signature_loaded()
             return super().readinto(buffer)
 
-    def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:  # noqa: D102
+    def readinto1(self: Self, buffer: Buffer) -> int:  # noqa: D102
         with self._rlock:
             self._check_signature_loaded()
             return super().readinto1(buffer)
 
-    def detach(self: Self) -> io.RawIOBase:  # noqa: D102
+    def detach(self: Self) -> io.RawIOBase | io.BytesIO:  # type: ignore[override] # noqa: D102
         with self._rlock:
             self._free_signature_c_api_resources()
             return super().detach()
@@ -589,7 +584,7 @@ class Delta(_Job):
             self._close_signature()
             self._free_signature_job_c_api_resources()
 
-    def detach_signature(self: Self) -> io.RawIOBase:
+    def detach_signature(self: Self) -> io.RawIOBase | io.BytesIO:
         """Detach from the underlying signature stream and return it.
 
         :raises ValueError: If the reader is in an invalid state or already
@@ -600,7 +595,7 @@ class Delta(_Job):
                 msg = "raw_signature stream already detached"
                 raise ValueError(msg)
             raw_signature = self._raw_sig
-            self._raw_sig = None
+            self._raw_sig = None  # type: ignore[assignment]
             self._free_signature_job_c_api_resources()
             return raw_signature
 
@@ -676,7 +671,7 @@ class Delta(_Job):
 
         return total_read
 
-    def _check_signature_loaded(self: Self) -> bool:
+    def _check_signature_loaded(self: Self) -> None:
         """Raise ValueError if the signature stream is closed."""
         if not self.signature_loaded:
             msg = "Signature not loaded. Did you forget to call `.load_signature()`?"
@@ -737,7 +732,7 @@ class Delta(_Job):
             return self._sig_loaded
 
     @property
-    def raw_signature(self: Self) -> io.RawIOBase:
+    def raw_signature(self: Self) -> io.RawIOBase | io.BytesIO:
         """Get the underlying raw signature stream."""
         with self._rlock:
             return self._raw_sig
@@ -776,7 +771,7 @@ class Delta(_Job):
         self._free_signature_job_c_api_resources()
         return super().__del__()
 
-    def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
+    def __exit__(self: Self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401, PYI036
         """Context management protocol. Calls close()."""
         self.close_signature()
         return super().__exit__(*args, **kwargs)
@@ -790,9 +785,9 @@ class Patch(_Job):
     to `io.BufferedReader`, this object is not seekable.
 
     :param basis_raw: The source basis stream
-    :type basis_raw: io.RawIOBase
+    :type basis_raw: Union[io.RawIOBase, io.BytesIO]
     :param delta_raw: The source delta stream
-    :type delta_raw: io.RawIOBase
+    :type delta_raw: Union[io.RawIOBase, io.BytesIO]
     :param buffer_size: The size of the cache buffer in bytes. For files above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -801,8 +796,8 @@ class Patch(_Job):
 
     def __init__(
         self: Self,
-        basis_raw: io.RawIOBase,
-        delta_raw: io.RawIOBase,
+        basis_raw: io.RawIOBase | io.BytesIO,
+        delta_raw: io.RawIOBase | io.BytesIO,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
@@ -813,7 +808,7 @@ class Patch(_Job):
             buffer_size=buffer_size,
         )
 
-    def detach_basis(self: Self) -> io.RawIOBase:
+    def detach_basis(self: Self) -> io.RawIOBase | io.BytesIO:
         """Detach from the underlying basis stream and return it.
 
         :raises ValueError: If the reader is in an invalid state or already
@@ -824,7 +819,7 @@ class Patch(_Job):
                 msg = "raw_basis stream already detached"
                 raise ValueError(msg)
             raw_basis = self._raw_basis
-            self._raw_basis = None
+            self._raw_basis = None  # type: ignore[assignment]
             self._free_c_api_resources()
             return raw_basis
 
@@ -844,7 +839,7 @@ class Patch(_Job):
             self.raw_basis.close()
 
     @property
-    def raw_basis(self: Self) -> io.RawIOBase:
+    def raw_basis(self: Self) -> io.RawIOBase | io.BytesIO:
         """Get the underlying raw basis stream."""
         with self._rlock:
             return self._raw_basis
@@ -860,7 +855,7 @@ class Patch(_Job):
         self._free_c_api_resources()
         return super().__del__()
 
-    def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
+    def __exit__(self: Self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401, PYI036
         """Context management protocol. Calls close()."""
         self.close_basis()
         return super().__exit__(*args, **kwargs)

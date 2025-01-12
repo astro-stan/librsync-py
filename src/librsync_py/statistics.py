@@ -79,7 +79,7 @@ class JobStatistics:
         completion_time = self.completion_time or datetime.now(timezone.utc)
         return int((completion_time - self.start_time).total_seconds())
 
-    time_taken: int = field(init=False, default=time_taken)
+    time_taken: int = field(init=False, default=time_taken)  # type: ignore[no-redef]
 
     @property
     def in_speed(self) -> float:
@@ -91,7 +91,7 @@ class JobStatistics:
             return 0.0
         return float(self.in_bytes / (self.time_taken or 1))
 
-    in_speed: float = field(init=False, default=in_speed)
+    in_speed: float = field(init=False, default=in_speed)  # type: ignore[no-redef]
 
     @property
     def out_speed(self) -> float:
@@ -103,7 +103,7 @@ class JobStatistics:
             return 0.0
         return float(self.out_bytes / (self.time_taken or 1))
 
-    out_speed: float = field(init=False, default=out_speed)
+    out_speed: float = field(init=False, default=out_speed)  # type: ignore[no-redef]
 
 
 @dataclass(frozen=True)
@@ -126,42 +126,42 @@ class MatchStatistics:
         """The number of weak sum compares done."""
         return self.hashcmp_count
 
-    weaksumcmp_count: int = field(init=False, default=weaksumcmp_count)
+    weaksumcmp_count: int = field(init=False, default=weaksumcmp_count)  # type: ignore[no-redef]
 
     @property
     def strongsumcmp_count(self) -> int:
         """The number of strong sum compares done."""
         return self.entrycmp_count
 
-    strongsumcmp_count: int = field(init=False, default=strongsumcmp_count)
+    strongsumcmp_count: int = field(init=False, default=strongsumcmp_count)  # type: ignore[no-redef]
 
     @property
     def hashcmp_ratio(self) -> float:
         """The ratio of hash to total compares done."""
         return float(self.hashcmp_count / (self.find_count or 1))
 
-    hashcmp_ratio: float = field(init=False, default=hashcmp_ratio)
+    hashcmp_ratio: float = field(init=False, default=hashcmp_ratio)  # type: ignore[no-redef]
 
     @property
     def weaksumcmp_ratio(self) -> float:
         """The ratio of weak sum to total compares done."""
         return self.hashcmp_ratio
 
-    weaksumcmp_ratio: float = field(init=False, default=weaksumcmp_ratio)
+    weaksumcmp_ratio: float = field(init=False, default=weaksumcmp_ratio)  # type: ignore[no-redef]
 
     @property
     def entrycmp_ratio(self) -> float:
         """The ratio of entry to total compares done."""
         return float(self.entrycmp_count / (self.find_count or 1))
 
-    entrycmp_ratio: float = field(init=False, default=entrycmp_ratio)
+    entrycmp_ratio: float = field(init=False, default=entrycmp_ratio)  # type: ignore[no-redef]
 
     @property
     def strongsumcmp_ratio(self) -> float:
         """The ratio of strong sum to total compares done."""
         return self.entrycmp_ratio
 
-    strongsumcmp_ratio: float = field(init=False, default=strongsumcmp_ratio)
+    strongsumcmp_ratio: float = field(init=False, default=strongsumcmp_ratio)  # type: ignore[no-redef]
 
     @property
     def match_ratio(self) -> float:
@@ -172,11 +172,11 @@ class MatchStatistics:
         """
         return float(self.match_count / (self.find_count or 1))
 
-    match_ratio: float = field(init=False, default=match_ratio)
+    match_ratio: float = field(init=False, default=match_ratio)  # type: ignore[no-redef]
 
     @property
     def strongsum_calc_ratio(self) -> float:
         """The ratio of strong sum to total calculations done."""
         return float(self.strongsum_calc_count / (self.find_count or 1))
 
-    strongsum_calc_ratio: float = field(init=False, default=strongsum_calc_ratio)
+    strongsum_calc_ratio: float = field(init=False, default=strongsum_calc_ratio)  # type: ignore[no-redef]

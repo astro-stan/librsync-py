@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 try:
-    from librsync_py._librsync_py import (
-        ffi as _ffi,  # type: ignore[import-untyped] # noqa: F401
+    from librsync_py._librsync_py import (  # type: ignore[import-untyped] # noqa: F401
+        ffi as _ffi,
     )
-    from librsync_py._librsync_py import (
-        lib as _lib,  # type: ignore[import-untyped] # noqa: F401
+    from librsync_py._librsync_py import (  # type: ignore[import-untyped] # noqa: F401
+        lib as _lib,
     )
 except ImportError as exc:  # pragma: no cover
     msg = "librsync_py C extension import failed, cannot use C-API"

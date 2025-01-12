@@ -122,18 +122,17 @@ def test_signature_init_fails() -> None:
         Signature(io.BytesIO(b""), block_length=-1)  # 0 is valid, means "recommended"
 
     with pytest.raises(ValueError, match=r"Invalid signature type."):
-        Signature(io.BytesIO(b""), signature_type=1)  # 0 is valid, means "recommended"
+        # signature_type=0 is valid, means "recommended"
+        Signature(io.BytesIO(b""), signature_type=1)  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match=r"Signature hash length must be >=-1"):
         # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
         Signature(io.BytesIO(b""), hash_length=-2)
 
     with pytest.raises(ValueError, match=r"Signature hash length must be <=32"):
-        # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
         Signature(io.BytesIO(b""), hash_length=33)
 
     with pytest.raises(ValueError, match=r"Signature hash length must be <=16"):
-        # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
         Signature(io.BytesIO(b""), signature_type=SignatureType.MD4, hash_length=17)
 
 
@@ -251,6 +250,8 @@ def test_patch_init_args() -> None:
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 def test_pickling_not_supported(cls: type[Signature | Delta | Patch]) -> None:
     """Test picking and unpickling the streams is not supported."""
+    obj: Signature | Delta | Patch
+
     if cls is Signature:
         obj = _get_signature()
     elif cls is Delta:
@@ -267,6 +268,8 @@ def test_pickling_not_supported(cls: type[Signature | Delta | Patch]) -> None:
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 def test_repr(cls: type[Signature | Delta | Patch]) -> None:
     """Test picking and unpickling the streams is not supported."""
+    obj: Signature | Delta | Patch
+
     if cls is Signature:
         obj = _get_signature()
     elif cls is Delta:
@@ -347,17 +350,17 @@ def test_read(cls: type[Signature | Delta | Patch]) -> None:
 
     if cls is Signature:
 
-        def get_obj() -> Signature:
+        def get_obj() -> Signature | Delta | Patch:
             return _get_signature(basis=data_size, buffer_size=buffer_size)
     elif cls is Delta:
 
-        def get_obj() -> Delta:
+        def get_obj() -> Signature | Delta | Patch:
             o = _get_delta(basis=data_size, buffer_size=buffer_size)
             o.load_signature()
             return o
     else:
 
-        def get_obj() -> Patch:
+        def get_obj() -> Signature | Delta | Patch:
             return _get_patch(basis=data_size, buffer_size=buffer_size)
 
     obj = get_obj()
@@ -398,17 +401,17 @@ def test_readinto(cls: type[Signature | Delta | Patch]) -> None:  # noqa: PLR091
 
     if cls is Signature:
 
-        def get_obj() -> Signature:
+        def get_obj() -> Signature | Delta | Patch:
             return _get_signature(basis=data_size, buffer_size=buffer_size)
     elif cls is Delta:
 
-        def get_obj() -> Delta:
+        def get_obj() -> Signature | Delta | Patch:
             o = _get_delta(basis=data_size, buffer_size=buffer_size)
             o.load_signature()
             return o
     else:
 
-        def get_obj() -> Patch:
+        def get_obj() -> Signature | Delta | Patch:
             return _get_patch(basis=data_size, buffer_size=buffer_size)
 
     obj = get_obj()
@@ -808,6 +811,8 @@ def test_patch_context_manager_api() -> None:
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0915
     """Test job statistics."""
+    obj: Signature | Delta | Patch
+
     if cls is Signature:
         obj = _get_signature()
         job_type = JobType.SIGNATURE
@@ -848,7 +853,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         assert obj.job_stats.in_speed == 0
         assert obj.job_stats.out_speed == 0
 
-    if cls is Delta:
+    if isinstance(obj, Delta):
         assert isinstance(obj.signature_job_stats, JobStatistics)
         assert obj.signature_job_stats.job_type == JobType.LOAD_SIGNATURE
         assert obj.signature_job_stats.lit_cmds == 0
@@ -946,7 +951,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
 
     obj.close()
 
-    if cls is Delta:
+    if isinstance(obj, Delta):
         with pytest.raises(
             ValueError, match=r"I/O operation on a freed librsync signature."
         ):
@@ -961,7 +966,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
 
 def test_delta_match_stats() -> None:
     """Test delta job match statistics."""
-    text_orig = bytearray(b"123" * 1024 * 100)
+    text_orig = b"123" * 1024 * 100
     text_new = text_orig
 
     text_orig = b"666" * 100 + text_orig

@@ -36,7 +36,7 @@ See :meth:`_patch_copy_callback` for more information.
 """
 
 
-_global_weakkeydict = WeakKeyDictionary()
+_global_weakkeydict: WeakKeyDictionary = WeakKeyDictionary()
 """Used to keep nested cdata objects alive until parent cdata object is GCed"""
 
 
@@ -356,7 +356,7 @@ def _get_sig_args(
         signature_type = SignatureType.RK_BLAKE2
 
     _validate_sig_args(
-        signature_type,
+        signature_type,  # type: ignore[arg-type]
         block_length,
         hash_length,
         get_sig_args_call=True,
@@ -436,7 +436,7 @@ def _on_patch_copy_error(handle_name: str) -> Callable:
             # Get the patch handle instance
             patch_handle = cast(_PatchHandle, _ffi.from_handle(p_handle))
             # Save the exception instance inside the patch handle
-            patch_handle.exc = exc_value
+            patch_handle.exc = exc_value  # type: ignore[assignment]
 
         # Always return None
         # This ensures CFFI will not print the exception traceback on stderr
@@ -767,8 +767,8 @@ def get_job_stats(
     raw_stats = _lib.rs_job_statistics(p_job_handle)
 
     if raw_stats.op != _ffi.NULL:
-        job_type = cast(bytes, _ffi.buffer(raw_stats.op, 20)[:])
-        job_type = job_type[: job_type.index(b"\x00")].decode()
+        job_type_raw = cast(bytes, _ffi.buffer(raw_stats.op, 20)[:])
+        job_type = job_type_raw[: job_type_raw.index(b"\x00")].decode()
     else:
         job_type = ""
 
