@@ -1,0 +1,200 @@
+---
+name: Build And Run Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  unit-test:
+    name: Run unit tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ['ubuntu-latest']
+        compiler: ['gcc']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install compiler
+        uses: rlalik/setup-cpp-compiler@master
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          # python-version-file does not seem to support multiple versions
+          # definition
+          python-version: |
+            3.8
+            3.9
+            3.10
+            3.11
+            3.12
+            3.13
+          cache: pip
+      - name: Install Nox
+        run: pip install nox
+      - name: Run Tests
+        run: nox --error-on-missing-interpreters -s test -- --cov-report=xml:reports/coverage.xml --cov-append
+      - name: Publish Coverage Results
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          directory: ./reports/
+          files: ./coverage.xml
+          flags: unittests
+          name: librsync-py
+          token: ${{ secrets.CODECOV_TOKEN }}
+  qa-test:
+    name: Run QA tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ['ubuntu-latest']
+        compiler: ['gcc']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install compiler
+        uses: rlalik/setup-cpp-compiler@master
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          # python-version-file does not seem to support multiple versions
+          # definition
+          python-version: |
+            3.8
+            3.9
+            3.10
+            3.11
+            3.12
+            3.13
+          cache: pip
+      - name: Install Nox
+        run: pip install nox
+      - name: Check formatting
+        run: nox --error-on-missing-interpreters -s format -- --check
+      - name: Check linting
+        run: nox --error-on-missing-interpreters -s lint
+      - name: Check types
+        run: nox --error-on-missing-interpreters -s typeCheck
+  build-sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          # python-version-file does not seem to support multiple versions
+          # definition
+          python-version: |
+            3.8
+            3.9
+            3.10
+            3.11
+            3.12
+            3.13
+          cache: pip
+      - name: Install Nox
+        run: pip install nox
+      - name: Build sdist
+        run: nox --error-on-missing-interpreters -s sdist
+      - name: Upload Sdist As Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: librsync-py-sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+  build-wheels:
+    name: Build wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [
+          'ubuntu-latest',
+          'windows-latest',
+          'macos-13', # intel
+          'macos-14', # apple silicon
+        ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build CPython wheels
+        uses: pypa/cibuildwheel@v2.19.1
+        env:
+          # Build for all supported python versions
+          CIBW_BUILD: |
+            *cp38*
+            *cp39*
+            *cp310*
+            *cp311*
+            *cp312*
+          CIBW_BUILD_FRONTEND: build
+          # Build ABI3 (limited API) wheels
+          CIBW_CONFIG_SETTINGS: setup-args="-Dpython.allow_limited_api=true"
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_TEST_COMMAND: pytest {project}
+          CIBW_TEST_REQUIRES: pytest
+          # Default commands can be found at:
+          # https://cibuildwheel.pypa.io/en/stable/options/#repair-wheel-command
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} && pip install abi3audit && abi3audit --strict --report {wheel}
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: auditwheel repair -w {dest_dir} {wheel} && pip install abi3audit && abi3audit --strict --report {wheel}
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: pip install abi3audit && abi3audit --strict --report {wheel} && copy {wheel} {dest_dir}
+          # Building for 32-bit Windows is tricky because meson
+          # fails when installed on a 64-bit host but finds an x86 python install
+          #
+          # See: https://github.com/mesonbuild/meson/issues/13008#issuecomment-2033711252
+          #
+          # Because of this, 32-bit Windows users will need to build from source
+          # (using the sdist) but given that Windows 11 does not even offer
+          # 32-bit images, this is a pretty niche use case.
+          CIBW_ARCHS_WINDOWS: AMD64
+        with:
+          output-dir: dist
+      - name: Build PyPy wheels
+        uses: pypa/cibuildwheel@v2.19.1
+        env:
+          # Build for all supported python versions
+          CIBW_BUILD: |
+            *pp38*
+            *pp39*
+            *pp310*
+          CIBW_BUILD_FRONTEND: build
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_TEST_COMMAND: pytest {project}
+          CIBW_TEST_REQUIRES: pytest
+          # Building for 32-bit Windows is tricky because meson
+          # fails when installed on a 64-bit host but finds an x86 python install
+          #
+          # See: https://github.com/mesonbuild/meson/issues/13008#issuecomment-2033711252
+          #
+          # Because of this, 32-bit Windows users will need to build from source
+          # (using the sdist) but given that Windows 11 does not even offer
+          # 32-bit images, this is a pretty niche use case.
+          CIBW_ARCHS_WINDOWS: AMD64
+          # pp310-macosx*: (TODO) For some reason it fails with:
+          # ```
+          # /Users/runner/Library/Caches/cibuildwheel/pypy3.10-v7.3.16-macos_arm64/include/pypy3.10/object.h:66:28: error: redefinition of typedef 'PyTypeObject' is a C11 feature [-Werror,-Wtypedef-redefinition]
+          #   typedef struct _typeobject PyTypeObject;
+          #   ^
+          # /Users/runner/Library/Caches/cibuildwheel/pypy3.10-v7.3.16-macos_arm64/include/pypy3.10/cpyext_object.h:293:3: note: previous definition is here
+          # } PyTypeObject;
+          # ```
+          CIBW_SKIP: pp310-macosx*
+        with:
+          output-dir: dist
+      - name: Upload Wheels As Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: librsync-py-wheels-${{ matrix.os }}
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 14
