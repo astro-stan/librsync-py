@@ -8,12 +8,11 @@ import io
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum, IntEnum
 from typing import TYPE_CHECKING, Any, Callable, cast
 from weakref import WeakKeyDictionary
 
-from librsync_py._internals import RsResult, RsSignatureMagic
-from librsync_py.exceptions import RsCApiError, RsUnknownError
+from librsync_py import JobStatistics, JobType, MatchStatistics, SignatureType
+from librsync_py.exceptions import Result, RsCApiError, RsUnknownError
 
 from . import _ffi, _lib
 
@@ -37,167 +36,8 @@ See :meth:`_patch_copy_callback` for more information.
 """
 
 
-_global_weakkeydict = WeakKeyDictionary()
+_global_weakkeydict: WeakKeyDictionary = WeakKeyDictionary()
 """Used to keep nested cdata objects alive until parent cdata object is GCed"""
-
-
-class RsDeltaMagic(IntEnum):
-    """A 4-byte magic number emitted in network-order at the start of librsync files.
-
-    Used to differentiate the type of data contained in the file.
-    """
-
-    DELTA = cast(int, _lib.RS_DELTA_MAGIC)
-    """A delta file."""
-
-
-@dataclass(frozen=True)
-class JobStats:
-    """librsync job statistics."""
-
-    class JobType(str, Enum):
-        """librsync job type."""
-
-        NOOP = ""
-        DELTA = "delta"
-        PATCH = "patch"
-        LOAD_SIGNATURE = "loadsig"
-        SIGNATURE = "signature"
-
-    job_type: JobType
-    """Human-readable name of current operation."""
-    lit_cmds: int
-    """Number of literal commands."""
-    lit_bytes: int
-    """Number of literal bytes."""
-    lit_cmdbytes: int
-    """Number of bytes used in literal command headers."""
-
-    copy_cmds: int
-    """Number of copy commands."""
-    copy_bytes: int
-    """Number of copied bytes."""
-    copy_cmdbytes: int
-    """Number of bytes used in copy command headers."""
-
-    sig_cmds: int
-    """Number of signature commands."""
-    sig_bytes: int
-    """Number of signature bytes."""
-
-    false_matches: int
-    """Number of false matches."""
-
-    sig_blocks: int
-    """Number of blocks described by the signature."""
-
-    block_len: int
-    """The block length."""
-
-    in_bytes: int
-    """Total bytes read from input."""
-
-    out_bytes: int
-    """Total bytes written to output."""
-
-    start_time: datetime
-    """The start time."""
-
-    completion_time: datetime | None
-    """The time the job completed. None if the job has not completed yet."""
-
-    @property
-    def time_taken(self) -> int:
-        """The amount of time taken to complete the job (in seconds).
-
-        If the job has not completed yet, the time taken up to this point is
-        returned.
-
-        Due to C API limitations, the time will be rounded down to the last full
-        second.
-        """
-        completion_time = self.completion_time or datetime.now(timezone.utc)
-        return int((completion_time - self.start_time).total_seconds())
-
-    @property
-    def in_speed(self) -> float:
-        """The input stream speed in B/s.
-
-        If the job has not completed yet, the speed up to this point is returned.
-        """
-        if not self.in_bytes:
-            return 0.0
-        return float(self.in_bytes / (self.time_taken or 1))
-
-    @property
-    def out_speed(self) -> float:
-        """The output stream speed in B/s.
-
-        If the job has not completed yet, the speed up to this point is returned.
-        """
-        if not self.out_bytes:
-            return 0.0
-        return float(self.out_bytes / (self.time_taken or 1))
-
-
-@dataclass(frozen=True)
-class MatchStats:
-    """Delta file match statistics."""
-
-    find_count: int
-    """The number of finds tried."""
-    match_count: int
-    """The number of matches found."""
-    hashcmp_count: int
-    """The number of hash compares done."""
-    entrycmp_count: int
-    """The number of entry compares done."""
-    strongsum_calc_count: int
-    """The number of strong sum calculations done."""
-
-    @property
-    def weaksumcmp_count(self) -> int:
-        """The number of weak sum compares done."""
-        return self.hashcmp_count
-
-    @property
-    def strongsumcmp_count(self) -> int:
-        """The number of strong sum compares done."""
-        return self.entrycmp_count
-
-    @property
-    def hashcmp_ratio(self) -> float:
-        """The ratio of hash to total compares done."""
-        return float(self.hashcmp_count / (self.find_count or 1))
-
-    @property
-    def weaksumcmp_ratio(self) -> float:
-        """The ratio of weak sum to total compares done."""
-        return self.hashcmp_ratio
-
-    @property
-    def entrycmp_ratio(self) -> float:
-        """The ratio of entry to total compares done."""
-        return float(self.entrycmp_count / (self.find_count or 1))
-
-    @property
-    def strongsumcmp_ratio(self) -> float:
-        """The ratio of strong sum to total compares done."""
-        return self.entrycmp_ratio
-
-    @property
-    def match_ratio(self) -> float:
-        """The match ratio.
-
-        For signatures with equal block and hash lengths, higher match ratio
-        results in smaller delta file sizes.
-        """
-        return float(self.match_count / (self.find_count or 1))
-
-    @property
-    def strongsum_calc_ratio(self) -> float:
-        """The ratio of strong sum to total calculations done."""
-        return float(self.strongsum_calc_count / (self.find_count or 1))
 
 
 @dataclass
@@ -286,7 +126,7 @@ def _check_buffers_handle_valid(p_buffers_handle: CTypesData) -> None:
 
 
 def _validate_sig_args(
-    magic: RsSignatureMagic,
+    signature_type: SignatureType,
     block_length: int,
     hash_length: int,
     *,
@@ -296,8 +136,8 @@ def _validate_sig_args(
 
     Replicates the `rs_sig_args_check()` macro.
 
-    :param magic: The signature magic
-    :type magic: RsSignatureMagic
+    :param signature_type: The signature type
+    :type signature_type: SignatureType
     :param block_length: The signature block length
     :type block_length: int
     :param hash_length: The signature hash length
@@ -310,12 +150,12 @@ def _validate_sig_args(
 
     max_hash_length = (
         _lib.RS_MD4_SUM_LENGTH
-        if magic in (RsSignatureMagic.MD4_SIG, RsSignatureMagic.RK_MD4_SIG)
+        if signature_type in (SignatureType.MD4, SignatureType.RK_MD4)
         else _lib.RS_BLAKE2_SUM_LENGTH
     )
 
-    if magic not in iter(RsSignatureMagic):
-        err = "Invalid signature magic."
+    if signature_type not in iter(SignatureType):
+        err = "Invalid signature type."
     elif hash_length > max_hash_length:
         err = f"Signature hash length must be <={max_hash_length}"
     elif hash_length < (-1 if get_sig_args_call else 0):
@@ -361,37 +201,6 @@ def _validate_job(p_job_handle: CTypesData) -> None:
     if p_job_handle[0].dogtag != 20010225:  # noqa: PLR2004
         err = "Invalid job."
         raise ValueError(err)
-
-
-def _handle_rs_result(
-    result: int | RsResult,
-    *,
-    raise_on_non_error_results: bool = True,
-) -> RsResult:
-    """Check the operation result and raise an appropriate :class:`RsCApiError` if needed.
-
-    :param result: The result of the operation
-    :type result: Union[int, RsResult]
-    :param raise_on_non_error_results: Whether or not non-erronous results should raise
-    an :class:`RsCApiError`. NOTE: RsResult.DONE is not affected by this setting and will
-    never raise an exception.
-    :type raise_on_non_error_results: bool
-    :returns: Non-erronous RsResult
-    :rtype: RsResult
-    :raises RsCApiError: The appropriate exception subclass for the given RsResult
-    """
-    if result == RsResult.DONE:
-        return RsResult(result)
-
-    if raise_on_non_error_results and result == RsResult.BLOCKED:
-        return RsResult(result)
-
-    exc_candidates = [x for x in RsCApiError.__subclasses__() if result == x.RESULT]
-
-    if not exc_candidates:  # pragma: no cover
-        raise RsUnknownError(result)
-
-    raise exc_candidates[0]
 
 
 def _new_rs_buffers_t_p_handle(
@@ -487,42 +296,78 @@ def _get_job_t_copy_arg(p_job_handle: CTypesData) -> Any | None:  # noqa: ANN401
     return None
 
 
+def _handle_rs_result(
+    result: int | Result,
+    *,
+    raise_on_non_error_results: bool = True,
+) -> Result:
+    """Check the operation result and raise an appropriate :class:`RsCApiError` if needed.
+
+    :param result: The result of the operation
+    :type result: Union[int, RsResult]
+    :param raise_on_non_error_results: Whether or not non-erronous results should raise
+    an :class:`RsCApiError`. NOTE: RsResult.DONE is not affected by this setting and will
+    never raise an exception.
+    :type raise_on_non_error_results: bool
+    :returns: Non-erronous RsResult
+    :rtype: RsResult
+    :raises RsCApiError: The appropriate exception subclass for the given RsResult
+    """
+    if result == Result.DONE:
+        return Result(result)
+
+    if raise_on_non_error_results and result == Result.BLOCKED:
+        return Result(result)
+
+    exc_candidates = [x for x in RsCApiError.__subclasses__() if result == x.RESULT]
+
+    if not exc_candidates:  # pragma: no cover
+        raise RsUnknownError(result)
+
+    raise exc_candidates[0]
+
+
 def _get_sig_args(
     filesize: int = -1,
-    sig_magic: int | RsSignatureMagic = 0,
+    signature_type: int | SignatureType = 0,
     block_length: int = 0,
     hash_length: int = 0,
-) -> tuple[RsSignatureMagic, int, int]:
+) -> tuple[SignatureType, int, int]:
     """Get recommended arguments for generating a file signature.
 
     :param filesize: The size of the file. Use -1 for "unknown".
     :type filesize: int
-    :param sig_magic: The signature type. Use 0 for recommended.
-    :type sig_magic: Union[int, RsSignatureMagic]
+    :param signature_type: The signature type. Use 0 for recommended.
+    :type signature_type: Union[int, SignatureType]
     :param block_length: The signature block length. Larger values make
     a shorter signature but increase the delta size. Use 0 for recommended.
     :type block_length: int
     :param hash_length: The signature hash (strongsum) length. Smaller values
     make signatures shorter but increase the chance for corruption due to
     hash collisions. Use `0` for maximum or `-1` for minimum.
-    :returns: A 3-tuple containing the RsSignatureMagic, block_length and hash_length
+    :returns: A 3-tuple containing the SignatureType, block_length and hash_length
     in that order.
-    :rtype: tuple[RsSignatureMagic, int, int]
+    :rtype: tuple[SignatureType, int, int]
     :raises RsCApiError: If something goes wrong while inside the C API
     """
-    if sig_magic == 0:
+    if signature_type == 0:
         # Set the value the lib recommends, so that signature arg validation
         # can pass
-        sig_magic = RsSignatureMagic.RK_BLAKE2_SIG
+        signature_type = SignatureType.RK_BLAKE2
 
-    _validate_sig_args(sig_magic, block_length, hash_length, get_sig_args_call=True)
+    _validate_sig_args(
+        signature_type,  # type: ignore[arg-type]
+        block_length,
+        hash_length,
+        get_sig_args_call=True,
+    )
 
     # -1 is allowed, as it means "unknown"
     if filesize < -1:
         err = "Filesize must be >= 0"
         raise ValueError(err)
 
-    p_sig_magic = _ffi.new("rs_magic_number *", sig_magic)
+    p_sig_magic = _ffi.new("rs_magic_number *", signature_type)
     p_block_length = _ffi.new("size_t *", block_length)
     if hash_length >= 0:
         p_hash_length = _ffi.new("size_t *", hash_length)
@@ -534,25 +379,7 @@ def _get_sig_args(
         raise_on_non_error_results=False,
     )
 
-    return RsSignatureMagic(p_sig_magic[0]), p_block_length[0], p_hash_length[0]
-
-
-def build_hash_table(pp_sig_handle: CTypesData) -> None:
-    """Index a signature after loading.
-
-    Must be called on a signature after the load signature job (created with
-    :meth:`loadsig_begin`) has been passed to :meth:`job_iter` and the job
-    has completed.
-
-    When the signature handle is no longer needed, it must be deallocated with
-    :meth:`free_sig`.
-
-    :param pp_sig_handle: The signature handle
-    :type pp_sig_handle: CTypesData
-    :raises RsCApiError: If something goes wrong while inside the C API
-    """
-    _validate_signature(pp_sig_handle)
-    _handle_rs_result(_lib.rs_build_hash_table(pp_sig_handle[0]))
+    return SignatureType(p_sig_magic[0]), p_block_length[0], p_hash_length[0]
 
 
 def _on_patch_copy_error(handle_name: str) -> Callable:
@@ -609,7 +436,7 @@ def _on_patch_copy_error(handle_name: str) -> Callable:
             # Get the patch handle instance
             patch_handle = cast(_PatchHandle, _ffi.from_handle(p_handle))
             # Save the exception instance inside the patch handle
-            patch_handle.exc = exc_value
+            patch_handle.exc = exc_value  # type: ignore[assignment]
 
         # Always return None
         # This ensures CFFI will not print the exception traceback on stderr
@@ -618,7 +445,7 @@ def _on_patch_copy_error(handle_name: str) -> Callable:
 
 
 @_ffi.def_extern(
-    error=RsResult.IO_ERROR,  # Return this from the callback if an exception is raised.
+    error=Result.IO_ERROR,  # Return this from the callback if an exception is raised.
     onerror=_on_patch_copy_error("p_opaque"),  # Handle any raised exceptions
 )
 def _patch_copy_callback(
@@ -626,7 +453,7 @@ def _patch_copy_callback(
     pos: int,
     p_len: CTypesData,
     pp_buf: CTypesData,
-) -> RsResult:
+) -> Result:
     """Copy data from a basis file during a patching iteration.
 
     Invoked from the C API during a call to :meth:`job_iter`.
@@ -680,13 +507,173 @@ def _patch_copy_callback(
     p_len[0] = len(data)
 
     if len(data) == 0:
-        return RsResult.INPUT_ENDED
+        return Result.INPUT_ENDED
 
     # Copy the data to the buffer
     c_buffer = _ffi.buffer(pp_buf[0], len(data))
     c_buffer[:] = data
 
-    return RsResult.DONE
+    return Result.DONE
+
+
+def free_job(p_job_handle: CTypesData) -> None:
+    """Free a job.
+
+    :raises RsCApiError: If something goes wrong while inside the C API
+    """
+    _check_job_handle_valid(p_job_handle)
+
+    try:
+        _handle_rs_result(
+            _lib.rs_job_free(p_job_handle),
+            raise_on_non_error_results=False,
+        )
+    finally:
+        # Sanitise the pointers
+        p_job_handle = _ffi.NULL
+
+
+def free_sig(pp_sig_handle: CTypesData) -> None:
+    """Free a signature."""
+    _check_sig_handle_valid(pp_sig_handle)
+
+    try:
+        _lib.rs_free_sumset(pp_sig_handle[0])  # Function returns void
+    finally:
+        # Sanitise the pointers
+        pp_sig_handle[0] = _ffi.NULL
+        pp_sig_handle = _ffi.NULL
+
+
+def sig_begin(
+    filesize: int = -1,
+    signature_type: int | SignatureType = 0,
+    block_length: int = 0,
+    hash_length: int = 0,
+) -> CTypesData:
+    """Start a signature generation.
+
+    Returns a job handle, which must be passed to :meth:`job_iter`.
+
+    The job handle must be deallocated with :meth:`free_job` when no longer needed
+    or the job completes.
+
+    :param filesize: The size of the file. Use -1 for "unknown"
+    :type filesize: int
+    :param signature_type: The signature type. Use 0 for recommended.
+    :type signature_type: Union[int, SignatureType]
+    :param block_length: The signature block length. Larger values make
+    a shorter signature but increase the delta size. Use 0 for recommended.
+    :type block_length: int
+    :param hash_length: The signature hash (strongsum) length. Smaller values
+    make signatures shorter but increase the chance for corruption due to
+    hash collisions. Use `0` for maximum or `-1` for minimum.
+    :returns: The job handle
+    :rtype: CTypesData
+    :raises RsCApiError: If something goes wrong while inside the C API
+    """
+    signature_type, block_length, hash_length = _get_sig_args(
+        filesize,
+        signature_type,
+        block_length,
+        hash_length,
+    )
+    return _lib.rs_sig_begin(block_length, hash_length, signature_type)
+
+
+def loadsig_begin() -> tuple[CTypesData, CTypesData]:
+    """Start loading a generated signature.
+
+    Returns a signature handle and a job handle.
+
+    The job handle must be passed to :meth:`job_iter`.
+
+    The job handle must be deallocated with :meth:`free_job` when no longer needed
+    or the job completes.
+
+    When the signature handle is no longer needed, it must be deallocated with
+    :meth:`free_sig`.
+
+    NOTE: The signature handle must not be used before the loadsig job has completed.
+
+    :returns: The signature handle and the job handle in this order
+    :rtype: tuple[CTypesData, CTypesData]
+    """
+    pp_sig_handle = _new_rs_signature_t_pp_handle()
+    return pp_sig_handle, _lib.rs_loadsig_begin(pp_sig_handle)
+
+
+def delta_begin(pp_sig_handle: CTypesData) -> CTypesData:
+    """Start a delta file generation.
+
+    Returns a job handle, which must be passed to :meth:`job_iter`.
+
+    When the job completes, the signature handle must be deallocated with
+    :meth:`free_sig` and the job handle must be deallocated with :meth:`free_job`.
+
+    :param pp_sig_handle: The signature handle. The signature must have first been
+    indexed with :meth:`build_hash_table`.
+    :type pp_sig_handle: CTypesData
+    :returns: The job handle
+    :rtype: CTypesData
+    :raises RsCApiError: If something goes wrong while inside the C API
+    """
+    # Purposefully only check the handle is valid here
+    # since the signature might not be fully loaded  or indexed yet.
+    # I.e. loadsig job might have not completed or
+    # the signature might not have been indexed yet.
+    _check_sig_handle_valid(pp_sig_handle)
+    return _lib.rs_delta_begin(pp_sig_handle[0])
+
+
+def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
+    """Start a patched file generation.
+
+    Returns a job handle, which must be passed to :meth:`job_iter`.
+
+    The job handle must be deallocated with :meth:`free_job` when no longer needed
+    or the job completes.
+
+    :param basis: A binary file-like object open for reading and supporting
+    random access (`.seek()`).
+    :type basis: Union[io.BufferedIOBase, io.RawIOBase]
+    :returns: The job handle
+    :rtype: CTypesData
+    :raises ValueError: If there is something wrong with the provided arugments
+    :raises OSError: If there is something wrong with the provided arugments
+    """
+    patch_handle = _PatchHandle(basis)
+    p_patch_handle = _ffi.new_handle(patch_handle)
+
+    p_job_handle = _lib.rs_patch_begin(
+        # When the C API calls `_lib._patch_copy_callback`, the
+        # :meth:`_patch_copy_callback` function will be called
+        _lib._patch_copy_callback,  # noqa: SLF001
+        p_patch_handle,
+    )
+
+    # Keep the handle alive until the p_job_handle object is GCed
+    _global_weakkeydict[p_job_handle] = p_patch_handle
+
+    return p_job_handle
+
+
+def build_hash_table(pp_sig_handle: CTypesData) -> None:
+    """Index a signature after loading.
+
+    Must be called on a signature after the load signature job (created with
+    :meth:`loadsig_begin`) has been passed to :meth:`job_iter` and the job
+    has completed.
+
+    When the signature handle is no longer needed, it must be deallocated with
+    :meth:`free_sig`.
+
+    :param pp_sig_handle: The signature handle
+    :type pp_sig_handle: CTypesData
+    :raises RsCApiError: If something goes wrong while inside the C API
+    """
+    _validate_signature(pp_sig_handle)
+    _handle_rs_result(_lib.rs_build_hash_table(pp_sig_handle[0]))
 
 
 def job_iter(
@@ -695,7 +682,7 @@ def job_iter(
     output: memoryview,
     *,
     eof: bool = False,
-) -> tuple[RsResult, int, int]:
+) -> tuple[Result, int, int]:
     """Run a single iteration of a given job.
 
     Calls `rs_job_iter` once and passes it the data inside the `input_` buffer.
@@ -756,189 +743,11 @@ def job_iter(
     )
 
 
-def free_job(p_job_handle: CTypesData) -> None:
-    """Free a job.
-
-    :raises RsCApiError: If something goes wrong while inside the C API
-    """
-    _check_job_handle_valid(p_job_handle)
-
-    try:
-        _handle_rs_result(
-            _lib.rs_job_free(p_job_handle),
-            raise_on_non_error_results=False,
-        )
-    finally:
-        # Sanitise the pointers
-        p_job_handle = _ffi.NULL
-
-
-def sig_begin(
-    filesize: int = -1,
-    sig_magic: int | RsSignatureMagic = 0,
-    block_length: int = 0,
-    hash_length: int = 0,
-) -> CTypesData:
-    """Start a signature generation.
-
-    Returns a job handle, which must be passed to :meth:`job_iter`.
-
-    The job handle must be deallocated with :meth:`free_job` when no longer needed
-    or the job completes.
-
-    :param filesize: The size of the file. Use -1 for "unknown"
-    :type filesize: int
-    :param sig_magic: The signature type. Use 0 for recommended.
-    :type sig_magic: Union[int, RsSignatureMagic]
-    :param block_length: The signature block length. Larger values make
-    a shorter signature but increase the delta size. Use 0 for recommended.
-    :type block_length: int
-    :param hash_length: The signature hash (strongsum) length. Smaller values
-    make signatures shorter but increase the chance for corruption due to
-    hash collisions. Use `0` for maximum or `-1` for minimum.
-    :returns: The job handle
-    :rtype: CTypesData
-    :raises RsCApiError: If something goes wrong while inside the C API
-    """
-    sig_magic, block_length, hash_length = _get_sig_args(
-        filesize,
-        sig_magic,
-        block_length,
-        hash_length,
-    )
-    return _lib.rs_sig_begin(block_length, hash_length, sig_magic)
-
-
-def loadsig_begin() -> tuple[CTypesData, CTypesData]:
-    """Start loading a generated signature.
-
-    Returns a signature handle and a job handle.
-
-    The job handle must be passed to :meth:`job_iter`.
-
-    The job handle must be deallocated with :meth:`free_job` when no longer needed
-    or the job completes.
-
-    When the signature handle is no longer needed, it must be deallocated with
-    :meth:`free_sig`.
-
-    NOTE: The signature handle must not be used before the loadsig job has completed.
-
-    :returns: The signature handle and the job handle in this order
-    :rtype: tuple[CTypesData, CTypesData]
-    """
-    pp_sig_handle = _new_rs_signature_t_pp_handle()
-    return pp_sig_handle, _lib.rs_loadsig_begin(pp_sig_handle)
-
-
-def free_sig(pp_sig_handle: CTypesData) -> None:
-    """Free a signature."""
-    _check_sig_handle_valid(pp_sig_handle)
-
-    try:
-        _lib.rs_free_sumset(pp_sig_handle[0])  # Function returns void
-    finally:
-        # Sanitise the pointers
-        pp_sig_handle[0] = _ffi.NULL
-        pp_sig_handle = _ffi.NULL
-
-
-def delta_begin(pp_sig_handle: CTypesData) -> CTypesData:
-    """Start a delta file generation.
-
-    Returns a job handle, which must be passed to :meth:`job_iter`.
-
-    When the job completes, the signature handle must be deallocated with
-    :meth:`free_sig` and the job handle must be deallocated with :meth:`free_job`.
-
-    :param pp_sig_handle: The signature handle. The signature must have first been
-    indexed with :meth:`build_hash_table`.
-    :type pp_sig_handle: CTypesData
-    :returns: The job handle
-    :rtype: CTypesData
-    :raises RsCApiError: If something goes wrong while inside the C API
-    """
-    # Purposefully only check the handle is valid here
-    # since the signature might not be fully loaded  or indexed yet.
-    # I.e. loadsig job might have not completed or
-    # the signature might not have been indexed yet.
-    _check_sig_handle_valid(pp_sig_handle)
-    return _lib.rs_delta_begin(pp_sig_handle[0])
-
-
-def get_match_stats(pp_sig_handle: CTypesData) -> MatchStats:
-    """Get delta file generation statistics.
-
-    :param pp_sig_handle: The signature handle
-    :type pp_sig_handle: CTypesData
-    :returns: The signature match statistics
-    :rtype: MatchStats
-    :raises NotImplementedError: If librsync was compiled without match
-    statistics support
-    """
-    _validate_signature(pp_sig_handle)
-
-    p_sig = pp_sig_handle[0]
-
-    if getattr(p_sig[0], "calc_strong_count", None) is None:
-        err = "Librsync was compiled without `HASHTABLE_NSTATS` support."
-        raise NotImplementedError(err)
-
-    if p_sig[0].hashtable == _ffi.NULL:
-        return MatchStats(
-            find_count=0,
-            match_count=0,
-            hashcmp_count=0,
-            entrycmp_count=0,
-            strongsum_calc_count=0,
-        )
-
-    return MatchStats(
-        find_count=p_sig[0].hashtable.find_count,
-        match_count=p_sig[0].hashtable.match_count,
-        hashcmp_count=p_sig[0].hashtable.hashcmp_count,
-        entrycmp_count=p_sig[0].hashtable.entrycmp_count,
-        strongsum_calc_count=p_sig[0].calc_strong_count,
-    )
-
-
-def patch_begin(basis: io.BufferedIOBase | io.RawIOBase) -> CTypesData:
-    """Start a patched file generation.
-
-    Returns a job handle, which must be passed to :meth:`job_iter`.
-
-    The job handle must be deallocated with :meth:`free_job` when no longer needed
-    or the job completes.
-
-    :param basis: A binary file-like object open for reading and supporting
-    random access (`.seek()`).
-    :type basis: Union[io.BufferedIOBase, io.RawIOBase]
-    :returns: The job handle
-    :rtype: CTypesData
-    :raises ValueError: If there is something wrong with the provided arugments
-    :raises OSError: If there is something wrong with the provided arugments
-    """
-    patch_handle = _PatchHandle(basis)
-    p_patch_handle = _ffi.new_handle(patch_handle)
-
-    p_job_handle = _lib.rs_patch_begin(
-        # When the C API calls `_lib._patch_copy_callback`, the
-        # :meth:`_patch_copy_callback` function will be called
-        _lib._patch_copy_callback,  # noqa: SLF001
-        p_patch_handle,
-    )
-
-    # Keep the handle alive until the p_job_handle object is GCed
-    _global_weakkeydict[p_job_handle] = p_patch_handle
-
-    return p_job_handle
-
-
 def get_job_stats(
     p_job_handle: CTypesData,
     in_bytes: int,
     out_bytes: int,
-) -> JobStats:
+) -> JobStatistics:
     """Get librsync job statistics.
 
     The in and out bytes are needed due to a C API limitation, where those
@@ -958,8 +767,8 @@ def get_job_stats(
     raw_stats = _lib.rs_job_statistics(p_job_handle)
 
     if raw_stats.op != _ffi.NULL:
-        job_type = cast(bytes, _ffi.buffer(raw_stats.op, 20)[:])
-        job_type = job_type[: job_type.index(b"\x00")].decode()
+        job_type_raw = cast(bytes, _ffi.buffer(raw_stats.op, 20)[:])
+        job_type = job_type_raw[: job_type_raw.index(b"\x00")].decode()
     else:
         job_type = ""
 
@@ -969,8 +778,8 @@ def get_job_stats(
     if out_bytes < 0:
         raise ValueError(msg.format("out_bytes"))
 
-    return JobStats(
-        job_type=JobStats.JobType(job_type),
+    return JobStatistics(
+        job_type=JobType(job_type),
         lit_cmds=raw_stats.lit_cmds,
         lit_bytes=raw_stats.lit_bytes,
         lit_cmdbytes=raw_stats.lit_cmdbytes,
@@ -990,6 +799,42 @@ def get_job_stats(
             if raw_stats.end
             else None
         ),
+    )
+
+
+def get_match_stats(pp_sig_handle: CTypesData) -> MatchStatistics:
+    """Get delta file generation statistics.
+
+    :param pp_sig_handle: The signature handle
+    :type pp_sig_handle: CTypesData
+    :returns: The signature match statistics
+    :rtype: MatchStats
+    :raises NotImplementedError: If librsync was compiled without match
+    statistics support
+    """
+    _validate_signature(pp_sig_handle)
+
+    p_sig = pp_sig_handle[0]
+
+    if getattr(p_sig[0], "calc_strong_count", None) is None:
+        err = "Librsync was compiled without `HASHTABLE_NSTATS` support."
+        raise NotImplementedError(err)
+
+    if p_sig[0].hashtable == _ffi.NULL:
+        return MatchStatistics(
+            find_count=0,
+            match_count=0,
+            hashcmp_count=0,
+            entrycmp_count=0,
+            strongsum_calc_count=0,
+        )
+
+    return MatchStatistics(
+        find_count=p_sig[0].hashtable.find_count,
+        match_count=p_sig[0].hashtable.match_count,
+        hashcmp_count=p_sig[0].hashtable.hashcmp_count,
+        entrycmp_count=p_sig[0].hashtable.entrycmp_count,
+        strongsum_calc_count=p_sig[0].calc_strong_count,
     )
 
 

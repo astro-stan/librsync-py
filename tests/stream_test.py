@@ -12,7 +12,7 @@ from time import sleep
 
 import pytest
 
-from librsync_py import Delta, JobStats, Patch, RsSignatureMagic, Signature
+from librsync_py import Delta, JobStatistics, JobType, Patch, Signature, SignatureType
 from librsync_py._internals import _lib
 
 
@@ -121,20 +121,19 @@ def test_signature_init_fails() -> None:
     with pytest.raises(ValueError, match=r"Signature block length must be >0"):
         Signature(io.BytesIO(b""), block_length=-1)  # 0 is valid, means "recommended"
 
-    with pytest.raises(ValueError, match=r"Invalid signature magic."):
-        Signature(io.BytesIO(b""), sig_magic=1)  # 0 is valid, means "recommended"
+    with pytest.raises(ValueError, match=r"Invalid signature type."):
+        # signature_type=0 is valid, means "recommended"
+        Signature(io.BytesIO(b""), signature_type=1)  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match=r"Signature hash length must be >=-1"):
         # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
         Signature(io.BytesIO(b""), hash_length=-2)
 
     with pytest.raises(ValueError, match=r"Signature hash length must be <=32"):
-        # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
         Signature(io.BytesIO(b""), hash_length=33)
 
     with pytest.raises(ValueError, match=r"Signature hash length must be <=16"):
-        # -1 and 0 are valid. Mean "minimum" and "maximum" respectively
-        Signature(io.BytesIO(b""), sig_magic=RsSignatureMagic.MD4_SIG, hash_length=17)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.MD4, hash_length=17)
 
 
 def test_delta_init_fails() -> None:
@@ -197,29 +196,29 @@ def test_signature_init_args() -> None:
     assert s.buffer_size == io.DEFAULT_BUFFER_SIZE
     assert s.raw is stream
 
-    # Test the signature magic is prepended by librsync
+    # Test the signature type is prepended by librsync
     assert (
         Signature(io.BytesIO(b""))
         .read()
-        .startswith(RsSignatureMagic.RK_BLAKE2_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.RK_BLAKE2.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), sig_magic=RsSignatureMagic.BLAKE2_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.BLAKE2)
         .read()
-        .startswith(RsSignatureMagic.BLAKE2_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.BLAKE2.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), sig_magic=RsSignatureMagic.RK_MD4_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.RK_MD4)
         .read()
-        .startswith(RsSignatureMagic.RK_MD4_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.RK_MD4.to_bytes(4, byteorder="big"))
     )
 
     assert (
-        Signature(io.BytesIO(b""), sig_magic=RsSignatureMagic.MD4_SIG)
+        Signature(io.BytesIO(b""), signature_type=SignatureType.MD4)
         .read()
-        .startswith(RsSignatureMagic.MD4_SIG.to_bytes(4, byteorder="big"))
+        .startswith(SignatureType.MD4.to_bytes(4, byteorder="big"))
     )
 
 
@@ -251,6 +250,8 @@ def test_patch_init_args() -> None:
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 def test_pickling_not_supported(cls: type[Signature | Delta | Patch]) -> None:
     """Test picking and unpickling the streams is not supported."""
+    obj: Signature | Delta | Patch
+
     if cls is Signature:
         obj = _get_signature()
     elif cls is Delta:
@@ -267,6 +268,8 @@ def test_pickling_not_supported(cls: type[Signature | Delta | Patch]) -> None:
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 def test_repr(cls: type[Signature | Delta | Patch]) -> None:
     """Test picking and unpickling the streams is not supported."""
+    obj: Signature | Delta | Patch
+
     if cls is Signature:
         obj = _get_signature()
     elif cls is Delta:
@@ -347,17 +350,17 @@ def test_read(cls: type[Signature | Delta | Patch]) -> None:
 
     if cls is Signature:
 
-        def get_obj() -> Signature:
+        def get_obj() -> Signature | Delta | Patch:
             return _get_signature(basis=data_size, buffer_size=buffer_size)
     elif cls is Delta:
 
-        def get_obj() -> Delta:
+        def get_obj() -> Signature | Delta | Patch:
             o = _get_delta(basis=data_size, buffer_size=buffer_size)
             o.load_signature()
             return o
     else:
 
-        def get_obj() -> Patch:
+        def get_obj() -> Signature | Delta | Patch:
             return _get_patch(basis=data_size, buffer_size=buffer_size)
 
     obj = get_obj()
@@ -398,17 +401,17 @@ def test_readinto(cls: type[Signature | Delta | Patch]) -> None:  # noqa: PLR091
 
     if cls is Signature:
 
-        def get_obj() -> Signature:
+        def get_obj() -> Signature | Delta | Patch:
             return _get_signature(basis=data_size, buffer_size=buffer_size)
     elif cls is Delta:
 
-        def get_obj() -> Delta:
+        def get_obj() -> Signature | Delta | Patch:
             o = _get_delta(basis=data_size, buffer_size=buffer_size)
             o.load_signature()
             return o
     else:
 
-        def get_obj() -> Patch:
+        def get_obj() -> Signature | Delta | Patch:
             return _get_patch(basis=data_size, buffer_size=buffer_size)
 
     obj = get_obj()
@@ -808,15 +811,17 @@ def test_patch_context_manager_api() -> None:
 @pytest.mark.parametrize("cls", [Signature, Delta, Patch])
 def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0915
     """Test job statistics."""
+    obj: Signature | Delta | Patch
+
     if cls is Signature:
         obj = _get_signature()
-        job_type = JobStats.JobType.SIGNATURE
+        job_type = JobType.SIGNATURE
     elif cls is Delta:
         obj = _get_delta()
-        job_type = JobStats.JobType.DELTA
+        job_type = JobType.DELTA
     else:
         obj = _get_patch()
-        job_type = JobStats.JobType.PATCH
+        job_type = JobType.PATCH
 
     # The start time is recorded by the C API, which in turn measures
     # epoch time, so it is limited to 1s intervals. Sleep for 1 second to
@@ -825,7 +830,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
 
     # Delta job is not loaded until signature is loaded
     if cls is not Delta:
-        assert isinstance(obj.job_stats, JobStats)
+        assert isinstance(obj.job_stats, JobStatistics)
         assert obj.job_stats.job_type == job_type
         assert obj.job_stats.lit_cmds == 0
         assert obj.job_stats.lit_bytes == 0
@@ -848,9 +853,9 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         assert obj.job_stats.in_speed == 0
         assert obj.job_stats.out_speed == 0
 
-    if cls is Delta:
-        assert isinstance(obj.signature_job_stats, JobStats)
-        assert obj.signature_job_stats.job_type == JobStats.JobType.LOAD_SIGNATURE
+    if isinstance(obj, Delta):
+        assert isinstance(obj.signature_job_stats, JobStatistics)
+        assert obj.signature_job_stats.job_type == JobType.LOAD_SIGNATURE
         assert obj.signature_job_stats.lit_cmds == 0
         assert obj.signature_job_stats.lit_bytes == 0
         assert obj.signature_job_stats.lit_cmdbytes == 0
@@ -878,8 +883,8 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
 
         in_len = len(_get_delta().raw_signature.read())
 
-        assert isinstance(obj.job_stats, JobStats)
-        assert obj.signature_job_stats.job_type == JobStats.JobType.LOAD_SIGNATURE
+        assert isinstance(obj.job_stats, JobStatistics)
+        assert obj.signature_job_stats.job_type == JobType.LOAD_SIGNATURE
         assert obj.signature_job_stats.lit_cmds == raw_stats.lit_cmds
         assert obj.signature_job_stats.lit_bytes == raw_stats.lit_bytes
         assert obj.signature_job_stats.lit_cmdbytes == raw_stats.lit_cmdbytes
@@ -919,7 +924,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
 
     raw_stats = _lib.rs_job_statistics(obj._job)  # noqa: SLF001
 
-    assert isinstance(obj.job_stats, JobStats)
+    assert isinstance(obj.job_stats, JobStatistics)
     assert obj.job_stats.job_type == job_type
     assert obj.job_stats.lit_cmds == raw_stats.lit_cmds
     assert obj.job_stats.lit_bytes == raw_stats.lit_bytes
@@ -946,7 +951,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
 
     obj.close()
 
-    if cls is Delta:
+    if isinstance(obj, Delta):
         with pytest.raises(
             ValueError, match=r"I/O operation on a freed librsync signature."
         ):
@@ -961,7 +966,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
 
 def test_delta_match_stats() -> None:
     """Test delta job match statistics."""
-    text_orig = bytearray(b"123" * 1024 * 100)
+    text_orig = b"123" * 1024 * 100
     text_new = text_orig
 
     text_orig = b"666" * 100 + text_orig
@@ -969,7 +974,7 @@ def test_delta_match_stats() -> None:
 
     obj = _get_delta(Signature(io.BytesIO(text_orig)), text_new)
 
-    with pytest.raises(ValueError, match=r"Invalid signature magic."):
+    with pytest.raises(ValueError, match=r"Invalid signature type."):
         obj.match_stats  # noqa: B018
 
     obj.load_signature()
@@ -1118,9 +1123,9 @@ def test_full_lifecycle_1_byte_at_a_time() -> None:
     orig = ((b"123" * 256) + b"4") * 64
     new = ((b"123" * 256) + b"5") * 48
 
-    sig_buffer = read_stream(Signature(io.BytesIO(orig)))
+    sig_buffer = read_stream(Signature(io.BytesIO(orig), buffer_size=1))
 
-    delta = Delta(io.BytesIO(sig_buffer), io.BytesIO(new))
+    delta = Delta(io.BytesIO(sig_buffer), io.BytesIO(new), buffer_size=1)
     while True:
         read = delta.load_signature(1)
         if not read:
@@ -1130,6 +1135,8 @@ def test_full_lifecycle_1_byte_at_a_time() -> None:
             break
 
     delta_buffer = read_stream(delta)
-    patched_orig = read_stream(Patch(io.BytesIO(orig), io.BytesIO(delta_buffer)))
+    patched_orig = read_stream(
+        Patch(io.BytesIO(orig), io.BytesIO(delta_buffer), buffer_size=1)
+    )
 
     assert new == patched_orig

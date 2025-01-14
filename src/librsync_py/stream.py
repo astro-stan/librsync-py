@@ -10,31 +10,19 @@ import weakref
 from threading import RLock
 from typing import TYPE_CHECKING
 
-from ._internals import RsSignatureMagic
-from ._internals.wrappers import (
-    JobStats,
-    MatchStats,
-    RsResult,
-    build_hash_table,
-    delta_begin,
-    free_job,
-    free_sig,
-    get_job_stats,
-    get_match_stats,
-    job_iter,
-    loadsig_begin,
-    patch_begin,
-    sig_begin,
-)
+from librsync_py import JobStatistics, MatchStatistics, SignatureType
+
+from ._internals import wrappers as _wrappers
+from .exceptions import Result
 
 if TYPE_CHECKING:  # pragma: no cover
-    from array import array
     from sys import version_info
     from typing import Any
 
     if version_info < (3, 11):  # pragma: no cover
-        from typing_extensions import Self
+        from typing_extensions import Buffer, Self
     else:  # pragma: no cover
+        from collections.abc import Buffer
         from typing import Self
 
     from cffi.backend_ctypes import CTypesData  # type: ignore[import-untyped]
@@ -47,10 +35,11 @@ class _Job(io.BufferedIOBase):
     which can be read to get the processed data. Note however, that in contrast
     to `io.BufferedReader`, this object is not seekable.
 
-    :param job: A librsync job primitive, created with `sig_begin`,
-    `loadsig_begin`, `delta_begin` or `patch_begin`. Its lifecycle will be
-    managed by this object. When it is GC-ed, or when the raw stream has
-    been closed or detached, the primitive will be freed with :meth:`free_job`
+    :param job: A librsync job primitive, created with :meth:`_wrappers.sig_begin`,
+    :meth:`_wrappers.loadsig_begin`, :meth:`_wrappers.delta_begin` or
+    meth:`_wrappers.patch_begin`. Its lifecycle will be managed by this object.
+    When it is GC-ed, or when the raw stream has been closed or detached, the
+    primitive will be freed with :meth:`_wrappers.free_job`
     :type job: CTypesData
     :param raw: The raw data stream
     :type raw: io.RawIOBase
@@ -63,7 +52,7 @@ class _Job(io.BufferedIOBase):
     def __init__(
         self: Self,
         job: CTypesData,
-        raw: io.RawIOBase,
+        raw: io.RawIOBase | io.BytesIO,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
@@ -135,11 +124,11 @@ class _Job(io.BufferedIOBase):
             self._check_c_api_freed()
             return self._read(size, read1=True)
 
-    def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:
+    def readinto(self: Self, buffer: Buffer) -> int:
         """Process and read up to size bytes into a buffer.
 
         :param buffer: The buffer to store the read data into
-        :type buffer: Union[bytearray, memoryview, array]
+        :type buffer: Buffer
         :returns: The size of the read data in bytes. May be smaller than the
         buffer length
         :rtype: int
@@ -152,11 +141,11 @@ class _Job(io.BufferedIOBase):
             self._check_c_api_freed()
             return self._readinto(buffer, read1=False)
 
-    def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:
+    def readinto1(self: Self, buffer: Buffer) -> int:
         """Process and read up to size bytes into a buffer while performing at most 1 read() system call.
 
         :param buffer: The buffer to store the read data into
-        :type buffer: Union[bytearray, memoryview, array]
+        :type buffer: Buffer
         :returns: The size of the read data in bytes. May be smaller than the
         buffer length
         :rtype: int
@@ -178,27 +167,22 @@ class _Job(io.BufferedIOBase):
             self._close()
             self._free_c_api_resources()
 
-    def detach(self: Self) -> io.RawIOBase:
+    def detach(self: Self) -> io.RawIOBase | io.BytesIO:  # type: ignore[override]
         """Detach from the underlying stream and return it.
 
         :raises ValueError: If the reader is in an invalid state or already
         detached.
         """
         with self._rlock:
-            if self.raw is None:
+            if self._raw is None:
                 msg = "raw stream already detached"
                 raise ValueError(msg)
             raw = self._raw
-            self._raw = None
+            self._raw = None  # type: ignore[assignment]
             self._free_c_api_resources()
             return raw
 
-    def _readinto(
-        self: Self,
-        buffer: bytearray | memoryview | array,
-        *,
-        read1: bool = False,
-    ) -> int:
+    def _readinto(self: Self, buffer: Buffer, *, read1: bool = False) -> int:
         """Process and read up to len(buffer) bytes into buffer.
 
         :param buffer: The buffer to read data into.
@@ -219,15 +203,15 @@ class _Job(io.BufferedIOBase):
 
         # Slow route - read data from the stream and process it
         if len(self._buf) < len(buffer):
-            chunks = [self._buf]
+            chunks: list[Buffer] = [self._buf]
             total_length = len(self._buf)
 
             # Chunk output buffer
             chunk_buffer = bytearray(max(self.buffer_size, len(buffer)))
 
-            result = RsResult.BLOCKED
+            result = Result.BLOCKED
             with memoryview(chunk_buffer) as mv:
-                while result == RsResult.BLOCKED:
+                while result == Result.BLOCKED:
                     result, written = self._process_raw(mv, read1=read1)
                     chunks.append(mv[:written].tobytes())
                     total_length += written
@@ -267,15 +251,15 @@ class _Job(io.BufferedIOBase):
 
         # Slow route - read data from the stream and process it
         if len(self._buf) < size or size < 0:
-            chunks = [self._buf]
+            chunks: list[Buffer] = [self._buf]
             total_length = len(self._buf)
 
             # Chunk output buffer
             chunk_buffer = bytearray(max(self.buffer_size, size))
 
-            result = RsResult.BLOCKED
+            result = Result.BLOCKED
             with memoryview(chunk_buffer) as mv:
-                while result == RsResult.BLOCKED:
+                while result == Result.BLOCKED:
                     result, written = self._process_raw(mv, read1=read1)
                     chunks.append(mv[:written].tobytes())
                     total_length += written
@@ -298,7 +282,7 @@ class _Job(io.BufferedIOBase):
         buf: memoryview,
         *,
         read1: bool = False,
-    ) -> tuple[RsResult, int]:
+    ) -> tuple[Result, int]:
         """Process and read from the raw stream into a buffer.
 
         :param buf: The buffer to store the read data into
@@ -306,15 +290,15 @@ class _Job(io.BufferedIOBase):
         :param read1: True to perform at most 1 read() system call
         :type read1: bool
         :returns: The result of the operation and the bytes written to the buffer
-        :rtype: tuple[RsResult, int]
+        :rtype: tuple[Result, int]
         :raises RsCApiError: If something goes wrong during the read
         :raises ValueError: If input param validation fails
         """
         out_pos = 0
         out_cap = len(buf)
 
-        result = RsResult.BLOCKED
-        while result == RsResult.BLOCKED and out_cap > 0:
+        result = Result.BLOCKED
+        while result == Result.BLOCKED and out_cap > 0:
             chunk = self.raw.read(max(out_cap - len(self._raw_buf), 0))
             self._in_bytes += len(chunk)
 
@@ -322,7 +306,7 @@ class _Job(io.BufferedIOBase):
             cap = len(self._raw_buf)
 
             with memoryview(self._raw_buf) as ib:
-                result, read, written = job_iter(
+                result, read, written = _wrappers.job_iter(
                     self._job,
                     ib,
                     buf[out_pos:],
@@ -358,7 +342,7 @@ class _Job(io.BufferedIOBase):
         if not hasattr(self, "_job"):
             return
         if self._job:
-            free_job(self._job)
+            _wrappers.free_job(self._job)
             self._job = None
 
     def _check_c_api_freed(self: Self) -> None:
@@ -368,7 +352,7 @@ class _Job(io.BufferedIOBase):
             raise ValueError(msg)
 
     @property
-    def raw(self: Self) -> io.RawIOBase:
+    def raw(self: Self) -> io.RawIOBase | io.BytesIO:
         """Get the underlying raw stream."""
         with self._rlock:
             return self._raw
@@ -383,20 +367,20 @@ class _Job(io.BufferedIOBase):
     def name(self: Self) -> str:
         """Get name."""
         with self._rlock:
-            return self.raw.name
+            return self.raw.name  # type: ignore[union-attr]
 
     @property
     def mode(self: Self) -> str:
         """Get mode."""
         with self._rlock:
-            return self.raw.mode
+            return self.raw.mode  # type: ignore[union-attr]
 
     @property
-    def job_stats(self: Self) -> JobStats:
+    def job_stats(self: Self) -> JobStatistics:
         """Get job statistics."""
         with self._rlock:
             self._check_c_api_freed()
-            return get_job_stats(self._job, self._in_bytes, self._out_bytes)
+            return _wrappers.get_job_stats(self._job, self._in_bytes, self._out_bytes)
 
     def __del__(self) -> None:
         """Deallocate the object."""
@@ -434,7 +418,7 @@ class Signature(_Job):
     to `io.BufferedReader`, this object is not seekable.
 
     :param raw: The source stream
-    :type raw: io.RawIOBase
+    :type raw: Union[io.RawIOBase, io.BytesIO]
     :param buffer_size: The size of the cache buffer in bytes. For files above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -442,6 +426,8 @@ class Signature(_Job):
     :file_size: The size of the file-like object represented by the raw stream.
     Set to `None` if unknown
     :type file_size: int
+    :param signature_type: The signature type
+    :type signature_type: SignatureType
     :param block_length: The signature block length. Larger values make a
     shorter signature but increase the delta file size. Use 0 for recommended.
     :type block_length: int
@@ -453,18 +439,18 @@ class Signature(_Job):
 
     def __init__(  # noqa: PLR0913
         self: Self,
-        raw: io.RawIOBase,
+        raw: io.RawIOBase | io.BytesIO,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
         file_size: int | None = None,
-        sig_magic: RsSignatureMagic = RsSignatureMagic.RK_BLAKE2_SIG,
+        signature_type: SignatureType = SignatureType.RK_BLAKE2,
         block_length: int = 0,
         hash_length: int = 0,
     ) -> None:
         """Create the object."""
         super().__init__(
-            sig_begin(
+            _wrappers.sig_begin(
                 filesize=file_size or -1,
-                sig_magic=sig_magic,
+                signature_type=signature_type,
                 block_length=block_length,
                 hash_length=hash_length,
             ),
@@ -481,9 +467,9 @@ class Delta(_Job):
     to `io.BufferedReader`, this object is not seekable.
 
     :param sig_raw: The source signature stream
-    :type sig_raw: io.RawIOBase
+    :type sig_raw: Union[io.RawIOBase, io.BytesIO]
     :param basis_raw: The source basis stream
-    :type basis_raw: io.RawIOBase
+    :type basis_raw: Union[io.RawIOBase, io.BytesIO]
     :param buffer_size: The size of the cache buffer in bytes. For files above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -492,8 +478,8 @@ class Delta(_Job):
 
     def __init__(
         self: Self,
-        sig_raw: io.RawIOBase,
-        basis_raw: io.RawIOBase,
+        sig_raw: io.RawIOBase | io.BytesIO,
+        basis_raw: io.RawIOBase | io.BytesIO,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
@@ -504,7 +490,7 @@ class Delta(_Job):
         self._raw_sig = sig_raw
         self._sig_loaded = False
         self._sig_buf = b""
-        self._sig, self._sig_job = loadsig_begin()
+        self._sig, self._sig_job = _wrappers.loadsig_begin()
 
         # Used for statistics
         self._sig_in_bytes = 0
@@ -572,17 +558,17 @@ class Delta(_Job):
             self._check_signature_loaded()
             return super().read1(size)
 
-    def readinto(self: Self, buffer: bytearray | memoryview | array) -> int:  # noqa: D102
+    def readinto(self: Self, buffer: Buffer) -> int:  # noqa: D102
         with self._rlock:
             self._check_signature_loaded()
             return super().readinto(buffer)
 
-    def readinto1(self: Self, buffer: bytearray | memoryview | array) -> int:  # noqa: D102
+    def readinto1(self: Self, buffer: Buffer) -> int:  # noqa: D102
         with self._rlock:
             self._check_signature_loaded()
             return super().readinto1(buffer)
 
-    def detach(self: Self) -> io.RawIOBase:  # noqa: D102
+    def detach(self: Self) -> io.RawIOBase | io.BytesIO:  # type: ignore[override] # noqa: D102
         with self._rlock:
             self._free_signature_c_api_resources()
             return super().detach()
@@ -598,7 +584,7 @@ class Delta(_Job):
             self._close_signature()
             self._free_signature_job_c_api_resources()
 
-    def detach_signature(self: Self) -> io.RawIOBase:
+    def detach_signature(self: Self) -> io.RawIOBase | io.BytesIO:
         """Detach from the underlying signature stream and return it.
 
         :raises ValueError: If the reader is in an invalid state or already
@@ -609,7 +595,7 @@ class Delta(_Job):
                 msg = "raw_signature stream already detached"
                 raise ValueError(msg)
             raw_signature = self._raw_sig
-            self._raw_sig = None
+            self._raw_sig = None  # type: ignore[assignment]
             self._free_signature_job_c_api_resources()
             return raw_signature
 
@@ -644,10 +630,10 @@ class Delta(_Job):
             return 0
 
         output = bytearray()  # loading signatures produces no output
-        result = RsResult.BLOCKED
+        result = Result.BLOCKED
         total_read = 0
         with memoryview(output) as out_mv:
-            while result == RsResult.BLOCKED:
+            while result == Result.BLOCKED:
                 if len(self._sig_buf) < max(self.buffer_size, chunk_size):
                     chunk = self._raw_sig.read(
                         max(self.buffer_size, chunk_size) - len(self._sig_buf)
@@ -657,7 +643,7 @@ class Delta(_Job):
                     self._sig_buf += chunk
 
                 with memoryview(self._sig_buf) as in_mv:
-                    result, read, _ = job_iter(
+                    result, read, _ = _wrappers.job_iter(
                         self._sig_job,
                         in_mv[: size if size > 0 else len(self._sig_buf)],
                         out_mv,
@@ -677,15 +663,15 @@ class Delta(_Job):
                 if (size > -1 and total_read >= size) or load1:
                     break
 
-        if result == RsResult.DONE:
-            build_hash_table(self._sig)  # Index the signature
+        if result == Result.DONE:
+            _wrappers.build_hash_table(self._sig)  # Index the signature
             # Create the delta job
-            self._job = delta_begin(self._sig)
+            self._job = _wrappers.delta_begin(self._sig)
             self._sig_loaded = True
 
         return total_read
 
-    def _check_signature_loaded(self: Self) -> bool:
+    def _check_signature_loaded(self: Self) -> None:
         """Raise ValueError if the signature stream is closed."""
         if not self.signature_loaded:
             msg = "Signature not loaded. Did you forget to call `.load_signature()`?"
@@ -714,7 +700,7 @@ class Delta(_Job):
         if not hasattr(self, "_sig"):
             return
         if self._sig:
-            free_sig(self._sig)
+            _wrappers.free_sig(self._sig)
             self._sig = None
 
     def _free_signature_job_c_api_resources(self: Self) -> None:
@@ -724,7 +710,7 @@ class Delta(_Job):
         if not hasattr(self, "_sig_job"):
             return
         if self._sig_job:
-            free_job(self._sig_job)
+            _wrappers.free_job(self._sig_job)
             self._sig_job = None
 
     def _check_signature_c_api_freed(self: Self) -> None:
@@ -746,7 +732,7 @@ class Delta(_Job):
             return self._sig_loaded
 
     @property
-    def raw_signature(self: Self) -> io.RawIOBase:
+    def raw_signature(self: Self) -> io.RawIOBase | io.BytesIO:
         """Get the underlying raw signature stream."""
         with self._rlock:
             return self._raw_sig
@@ -758,25 +744,25 @@ class Delta(_Job):
             return self.raw_signature.closed
 
     @property
-    def job_stats(self: Self) -> JobStats:
+    def job_stats(self: Self) -> JobStatistics:
         """Get job statistics."""
         with self._rlock:
             self._check_signature_loaded()
             return super().job_stats
 
     @property
-    def signature_job_stats(self: Self) -> JobStats:
+    def signature_job_stats(self: Self) -> JobStatistics:
         """Get load signature job statistics."""
         with self._rlock:
             self._check_signature_job_c_api_freed()
-            return get_job_stats(self._sig_job, self._sig_in_bytes, 0)
+            return _wrappers.get_job_stats(self._sig_job, self._sig_in_bytes, 0)
 
     @property
-    def match_stats(self: Self) -> MatchStats:
+    def match_stats(self: Self) -> MatchStatistics:
         """Get delta match statistics."""
         with self._rlock:
             self._check_signature_c_api_freed()
-            return get_match_stats(self._sig)
+            return _wrappers.get_match_stats(self._sig)
 
     def __del__(self: Self) -> None:
         """Deallocate the object."""
@@ -785,7 +771,7 @@ class Delta(_Job):
         self._free_signature_job_c_api_resources()
         return super().__del__()
 
-    def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
+    def __exit__(self: Self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401, PYI036
         """Context management protocol. Calls close()."""
         self.close_signature()
         return super().__exit__(*args, **kwargs)
@@ -799,9 +785,9 @@ class Patch(_Job):
     to `io.BufferedReader`, this object is not seekable.
 
     :param basis_raw: The source basis stream
-    :type basis_raw: io.RawIOBase
+    :type basis_raw: Union[io.RawIOBase, io.BytesIO]
     :param delta_raw: The source delta stream
-    :type delta_raw: io.RawIOBase
+    :type delta_raw: Union[io.RawIOBase, io.BytesIO]
     :param buffer_size: The size of the cache buffer in bytes. For files above
     1GB, good values are typically in the range of 1MB-16MB. Experimentation
     and/or profiling may be needed to achieve optimal results
@@ -810,19 +796,19 @@ class Patch(_Job):
 
     def __init__(
         self: Self,
-        basis_raw: io.RawIOBase,
-        delta_raw: io.RawIOBase,
+        basis_raw: io.RawIOBase | io.BytesIO,
+        delta_raw: io.RawIOBase | io.BytesIO,
         buffer_size: int = io.DEFAULT_BUFFER_SIZE,
     ) -> None:
         """Create the object."""
         self._raw_basis = basis_raw
         super().__init__(
-            job=patch_begin(self._raw_basis),
+            job=_wrappers.patch_begin(self._raw_basis),
             raw=delta_raw,
             buffer_size=buffer_size,
         )
 
-    def detach_basis(self: Self) -> io.RawIOBase:
+    def detach_basis(self: Self) -> io.RawIOBase | io.BytesIO:
         """Detach from the underlying basis stream and return it.
 
         :raises ValueError: If the reader is in an invalid state or already
@@ -833,7 +819,7 @@ class Patch(_Job):
                 msg = "raw_basis stream already detached"
                 raise ValueError(msg)
             raw_basis = self._raw_basis
-            self._raw_basis = None
+            self._raw_basis = None  # type: ignore[assignment]
             self._free_c_api_resources()
             return raw_basis
 
@@ -853,7 +839,7 @@ class Patch(_Job):
             self.raw_basis.close()
 
     @property
-    def raw_basis(self: Self) -> io.RawIOBase:
+    def raw_basis(self: Self) -> io.RawIOBase | io.BytesIO:
         """Get the underlying raw basis stream."""
         with self._rlock:
             return self._raw_basis
@@ -869,7 +855,7 @@ class Patch(_Job):
         self._free_c_api_resources()
         return super().__del__()
 
-    def __exit__(self: Self, *args: object, **kwargs: Any) -> Any:  # noqa: ANN401
+    def __exit__(self: Self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401, PYI036
         """Context management protocol. Calls close()."""
         self.close_basis()
         return super().__exit__(*args, **kwargs)
