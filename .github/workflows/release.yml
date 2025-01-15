@@ -77,7 +77,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build CPython wheels
-        uses: pypa/cibuildwheel@v2.19.1
+        uses: pypa/cibuildwheel@v2.22.0
         env:
           # Build for all supported python versions
           CIBW_BUILD: |
@@ -86,6 +86,7 @@ jobs:
             *cp310*
             *cp311*
             *cp312*
+            *cp313*
           CIBW_BUILD_FRONTEND: build
           # Build ABI3 (limited API) wheels
           CIBW_CONFIG_SETTINGS: setup-args="-Dpython.allow_limited_api=true"
@@ -109,7 +110,7 @@ jobs:
         with:
           output-dir: dist
       - name: Build PyPy wheels
-        uses: pypa/cibuildwheel@v2.19.1
+        uses: pypa/cibuildwheel@v2.22.0
         env:
           # Build for all supported python versions
           CIBW_BUILD: |
