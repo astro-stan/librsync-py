@@ -89,10 +89,6 @@ header_pp_config = {
         'source_header': librsync_py_h.full_path(),
         'clean_script_args': [
             '--header-allowlist',
-                # System headers
-                'time_t.h',
-                'types.h',
-                'stdbool.h',
                 # librsync headers
                 'librsync.h',
                 'sumset.h',
@@ -166,6 +162,7 @@ librsync_py_c = configure_file(
     command: [
         python,
         ffi_generator_script,
+        '--define-time-t',
         '--module-name',
         librsync_py_pyext_name,
         '--module-header',
