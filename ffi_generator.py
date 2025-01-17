@@ -34,8 +34,9 @@ def validate_source_file(parser: ArgumentParser, entry: str) -> None | Path:
     parser.error(f"'{path}' does not exist or is not a valid source file.")
     return None
 
-def compute_time_t_definition() -> None:
-    """Use heuristics to define the `time_t` type"""
+
+def compute_time_t_definition() -> str:
+    """Use heuristics to define the `time_t` type."""
     import ctypes
     import platform
 
@@ -62,7 +63,7 @@ def compute_time_t_definition() -> None:
         time_t = ctypes.c_time_t
     # If c_time_t does not exist make an educated guess.
     # Based on: https://stackoverflow.com/a/75904657
-    elif platform.system() == 'Windows':
+    elif platform.system() == "Windows":
         # Assume 64-bit time_t on Windows
         time_t = ctypes.c_int64
     elif ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_int64):
@@ -72,11 +73,13 @@ def compute_time_t_definition() -> None:
         # assume some kind of 32-bit platform
         time_t = ctypes.c_int32
 
-    if time_t._type_ not in type_map:
-        raise ValueError(f"Unexpected 'time_t' type: {time_t._type_}")
-    time_t_type = type_map[time_t._type_]
+    if time_t._type_ not in type_map:  # type: ignore [union-attr]
+        msg = f"Unexpected 'time_t' type: {time_t._type_}"  # type: ignore [union-attr]
+        raise ValueError(msg)
+    time_t_type = type_map[time_t._type_]  # type: ignore [union-attr]
 
     return f"typedef {time_t_type} time_t;"
+
 
 if __name__ == "__main__":
     argparser = ArgumentParser(
@@ -100,7 +103,7 @@ if __name__ == "__main__":
     )
     argparser.add_argument(
         "--define-time-t",
-        action='store_true',
+        action="store_true",
         default=False,
         required=False,
         help="Use heuristics to define the `time_t` type. This type is not "
@@ -114,9 +117,9 @@ if __name__ == "__main__":
     ffibuilder = cffi.FFI()
 
     if args.define_time_t:
-        print("Using heuristics to define the 'time_t' type...")
+        print("Using heuristics to define the 'time_t' type...")  # noqa: T201
         time_t_def = compute_time_t_definition()
-        print(f"Defining 'time_t' as: '{time_t_def}'")
+        print(f"Defining 'time_t' as: '{time_t_def}'")  # noqa: T201
         ffibuilder.cdef(time_t_def)
 
     for header in args.headers:
