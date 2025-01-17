@@ -35,6 +35,8 @@ librsync_cmake_defines = {
     'CMAKE_POSITION_INDEPENDENT_CODE': 'ON',
     'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization'),
     'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization'),
+    # Assume Windows compiler has printf_z support, otherwise build will fail
+    'CMAKE_HAVE_PRINTF_Z': 'ON',
 }
 if get_option('debug') == true
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Debug'}
