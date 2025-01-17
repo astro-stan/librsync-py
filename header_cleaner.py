@@ -145,7 +145,7 @@ def process_header(
     # `# 27 "/usr/include/x86_64-linux-gnu/bits/types.h"`
     # With capture groups for the line number and file path
     file_location_directive_regex = re.compile(
-        r"\s*#\s+(\d+)\s+\"((?:[\/\\][^\/\\]+)+)\""
+        r"\s*#\s+(\d+)\s+\"((?:(?:\/|\\\\)[^\/(?:\\\\)]+)+)\""
     )
 
     output = ""
