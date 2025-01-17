@@ -37,8 +37,8 @@ librsync_cmake_defines = {
      # which does not support printf z format specifiers. This is rarely (if
      # ever) the case on modern Windows systems and not enabling `HAVE_PRINTF_Z`
      # causes a compiler error.
-    'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization') + ' -DHAVE_PRINTF_Z -D__USE_MINGW_ANSI_STDIO=1',
-    'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization') + ' -DHAVE_PRINTF_Z -D__USE_MINGW_ANSI_STDIO=1',
+    'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization') + ' -DHAVE_PRINTF_Z -D_ISOC99_SOURCE',
+    'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization') + ' -DHAVE_PRINTF_Z -D_ISOC99_SOURCE',
 }
 if get_option('debug') == true
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Debug'}
