@@ -33,10 +33,12 @@ librsync_cmake_defines = {
     'BUILD_RDIFF': 'OFF', # Do not build the `rdiff` target
     'BUILD_SHARED_LIBS':'OFF',
     'CMAKE_POSITION_INDEPENDENT_CODE': 'ON',
-    'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization'),
-    'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization'),
-    # Assume Windows compiler has printf_z support, otherwise build will fail
-    'HAVE_PRINTF_Z': 'ON',
+     # Librsync assumes it is being compiled with an old MSVC compiler on Windows,
+     # which does not support printf z format specifiers. This is rarely (if
+     # ever) the case on modern Windows systems and not enabling `HAVE_PRINTF_Z`
+     # causes a compiler error.
+    'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization') + ' -DHAVE_PRINTF_Z',
+    'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization') + ' -DHAVE_PRINTF_Z',
 }
 if get_option('debug') == true
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Debug'}
