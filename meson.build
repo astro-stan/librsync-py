@@ -96,6 +96,8 @@ header_pp_config = {
         'source_header': librsync_py_h.full_path(),
         'clean_script_args': [
             '--header-allowlist',
+                # system headers
+                'stdint.h',
                 # librsync headers
                 'librsync.h',
                 'sumset.h',
@@ -112,6 +114,8 @@ header_pp_config = {
                 'checksum.h:35:62',
                 'rollsum.h:36:40',
                 'rabinkarp.h:56:60',
+            '--substitutions',
+                ':__extension__:'
         ],
     },
 }
