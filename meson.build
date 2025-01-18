@@ -33,12 +33,15 @@ librsync_cmake_defines = {
     'BUILD_RDIFF': 'OFF', # Do not build the `rdiff` target
     'BUILD_SHARED_LIBS':'OFF',
     'CMAKE_POSITION_INDEPENDENT_CODE': 'ON',
-     # Librsync assumes it is being compiled with an old MSVC compiler on Windows,
-     # which does not support printf z format specifiers. This is rarely (if
-     # ever) the case on modern Windows systems and not enabling `HAVE_PRINTF_Z`
-     # causes a compiler error.
-    'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization') + ' -DHAVE_PRINTF_Z -D_ISOC99_SOURCE',
-    'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization') + ' -DHAVE_PRINTF_Z -D_ISOC99_SOURCE',
+     # When compiling with MingGW-W64, `-Wformat` raises a compiler error
+     # when printing a `size_t` type, even though the correct format specifier
+     # is used (`%Iu`) by librsync. Normally disabling this flag to ignore the
+     # error is bad, but in this case it _should_ be okay because:
+     # - It is likely a false-positive (MS C runtime supports printing `size_t`:
+     #   https://learn.microsoft.com/en-us/cpp/c-runtime-library/format-specification-syntax-printf-and-wprintf-functions?view=msvc-170#size-prefixes-for-printf-and-wprintf-format-type-specifiers)
+     # - The relevant code is not used by the Python FFI wrapper functions
+    'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization') + ' -Wno-format',
+    'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization') + ' -Wno-format',
 }
 if get_option('debug') == true
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Debug'}
