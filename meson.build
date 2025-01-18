@@ -99,6 +99,7 @@ header_pp_config = {
                 # system headers
                 'stdint.h',
                 'bits/types.h',
+                'bits/stdint-uintn.h',
                 # librsync headers
                 'librsync.h',
                 'sumset.h',
