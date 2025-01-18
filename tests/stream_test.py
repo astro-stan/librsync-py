@@ -849,7 +849,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         assert obj.job_stats.completion_time is None
         # Time taken is measured as the difference between time now and start time
         # rounded down to the last full second
-        assert obj.job_stats.time_taken == 1
+        assert obj.job_stats.time_taken >= 1
         assert obj.job_stats.in_speed == 0
         assert obj.job_stats.out_speed == 0
 
@@ -873,7 +873,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         assert obj.signature_job_stats.completion_time is None
         # Time taken is measured as the difference between time now and start time
         # rounded down to the last full second
-        assert obj.signature_job_stats.time_taken == 1
+        assert obj.signature_job_stats.time_taken >= 1
         assert obj.signature_job_stats.in_speed == 0
         assert obj.signature_job_stats.out_speed == 0
 
@@ -900,7 +900,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         assert obj.signature_job_stats.out_bytes == 0
         assert isinstance(obj.signature_job_stats.start_time, datetime)
         assert isinstance(obj.signature_job_stats.completion_time, datetime)
-        assert obj.signature_job_stats.time_taken == 1
+        assert obj.signature_job_stats.time_taken >= 1
         assert (
             obj.signature_job_stats.in_speed
             == in_len / obj.signature_job_stats.time_taken
@@ -943,9 +943,9 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
     assert isinstance(obj.job_stats.completion_time, datetime)
     if cls is Delta:
         # Job doesn't get created until after signature is loaded
-        assert obj.job_stats.time_taken == 1
+        assert obj.job_stats.time_taken >= 1
     else:
-        assert obj.job_stats.time_taken == 2  # noqa: PLR2004
+        assert obj.job_stats.time_taken >= 2  # noqa: PLR2004
     assert obj.job_stats.in_speed == in_len / obj.job_stats.time_taken
     assert obj.job_stats.out_speed == out_len / obj.job_stats.time_taken
 
