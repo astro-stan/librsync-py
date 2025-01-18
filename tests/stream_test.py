@@ -483,15 +483,15 @@ def test_signature_close() -> None:
     assert obj.closed
     assert obj._job is None  # noqa: SLF001
 
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.read()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.read1()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readinto(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readinto1(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readable()
 
 
@@ -520,9 +520,9 @@ def test_delta_close() -> None:
     assert obj.signature_closed
     assert not obj.closed
 
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.load_signature()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.load_signature1()
 
     obj = _get_delta()
@@ -561,7 +561,7 @@ def test_delta_close() -> None:
         ValueError, match=r"I/O operation on a freed librsync signature."
     ):
         obj.readinto1(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readable()
 
 
@@ -602,15 +602,15 @@ def test_patch_close() -> None:
     assert not obj.basis_closed
     assert obj.closed
 
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.read()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.read1()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readinto(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readinto1(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readable()
 
 
