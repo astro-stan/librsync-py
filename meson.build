@@ -27,6 +27,8 @@ librsync_inc_dir = meson.current_source_dir() / 'vendor' / 'librsync' / 'src'
 librsync_py_pyext_name = '_@0@'.format(meson.project_name())
 librsync_py_pyext_c_name = '@0@.c'.format(librsync_py_pyext_name)
 librsync_py_pyext_h_name = '@0@.h'.format(librsync_py_pyext_name)
+time_t_size_tester_c_name = 'time_t_size_tester.c'
+time_t_size_tester_bin_name = 'time_t_size_tester'
 
 # C_args to pass to cmake when building librsync
 librsync_cmake_defines = {
@@ -68,6 +70,39 @@ librsync_pyext_headers = [
     'job.h',
     'sumset.h'
 ]
+
+# Generate the time_t size tester
+time_t_size_tester_c = configure_file(
+    command: [
+        python,
+        '-c',
+        'from pathlib import Path; Path("""@0@""").write_text("""@1@""")'.format(
+            time_t_size_tester_c_name,
+            '''#include <stdio.h>
+               #include <time.h>
+               int main()
+               {
+                    printf("%u", (unsigned int)sizeof(time_t));
+                    return 0;
+               }'''
+        )
+    ],
+    output: time_t_size_tester_c_name,
+)
+
+# Compile the time_t size tester
+time_t_size_tester_bin = configure_file(
+    command: [
+        c_compiler,
+        '-o',
+        time_t_size_tester_bin_name,
+        time_t_size_tester_c
+    ],
+    output: time_t_size_tester_bin_name,
+)
+
+# Compute time_t size
+computed_time_t_size = run_command(time_t_size_tester_bin, check: true).stdout().strip()
 
 # Generate the pyext header
 librsync_py_h = configure_file(
@@ -163,6 +198,8 @@ librsync_py_c = configure_file(
         python,
         ffi_generator_script,
         '--define-time-t',
+        '--time-t-sizeof-hint',
+        computed_time_t_size,
         '--module-name',
         librsync_py_pyext_name,
         '--module-header',
