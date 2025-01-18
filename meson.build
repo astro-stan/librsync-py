@@ -98,6 +98,7 @@ header_pp_config = {
             '--header-allowlist',
                 # system headers
                 'stdint.h',
+                'bits/types.h',
                 # librsync headers
                 'librsync.h',
                 'sumset.h',
@@ -114,6 +115,7 @@ header_pp_config = {
                 'checksum.h:35:62',
                 'rollsum.h:36:40',
                 'rabinkarp.h:56:60',
+
             '--substitutions',
                 ':__extension__:'
         ],
