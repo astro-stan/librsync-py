@@ -35,27 +35,50 @@ def validate_source_file(parser: ArgumentParser, entry: str) -> None | Path:
     return None
 
 
-def compute_time_t_definition() -> str:
+def compute_time_t_definition(size_hint: int | None) -> str:
     """Use heuristics to define the `time_t` type."""
     import ctypes
     import platform
 
     type_map = {
+        # Signed types
         "c": "char",
         "b": "signed char",
-        "B": "unsigned char",
         "h": "short",
-        "H": "unsigned short",
         "i": "int",
-        "I": "unsigned int",
         "l": "long",
-        "L": "unsigned long",
         "q": "long long",
-        "Q": "unsigned long long",
         "n": "ssize_t",
+        # unsigned types
+        "B": "unsigned char",
+        "H": "unsigned short",
+        "I": "unsigned int",
+        "L": "unsigned long",
+        "Q": "unsigned long long",
         "N": "size_t",
+        # real types
         "f": "float",
         "d": "double",
+    }
+
+    size_hint_map = {
+        # Signed types
+        "cbhilqn": {
+            2: ctypes.c_int16,
+            4: ctypes.c_int32,
+            8: ctypes.c_int64,
+        },
+        # Unsigned types
+        "BHILQN": {
+            2: ctypes.c_uint16,
+            4: ctypes.c_uint32,
+            8: ctypes.c_uint64,
+        },
+        # Real types
+        "fd": {
+            4: ctypes.c_float,
+            8: ctypes.c_double,
+        },
     }
 
     if hasattr(ctypes, "c_time_t"):
@@ -72,6 +95,23 @@ def compute_time_t_definition() -> str:
     else:
         # assume some kind of 32-bit platform
         time_t = ctypes.c_int32
+
+    if size_hint and ctypes.sizeof(time_t) != size_hint:
+        # Assuming the heuristics gave the correct type (signed, unsigned, real)
+        # but got the size wrong. Examples of this are:
+        # - Compiling 32-bit binaries on a 64-bit system
+        # - Compiling 32-bit binary on a 32-bit system with Y2K38 patch
+        for key, size_to_type_map in size_hint_map.items():
+            if time_t._type_ in key:  # type: ignore [union-attr]
+                try:
+                    time_t = size_to_type_map[size_hint]  # type: ignore [index]
+                    break
+                except KeyError:
+                    msg = (
+                        f"Cannot represent type {time_t._type_} "  # type: ignore [union-attr]
+                        f"as an {size_hint}-byte type."
+                    )
+                    raise ValueError(msg) from None
 
     if time_t._type_ not in type_map:  # type: ignore [union-attr]
         msg = f"Unexpected 'time_t' type: {time_t._type_}"  # type: ignore [union-attr]
@@ -111,6 +151,15 @@ if __name__ == "__main__":
         "is best-effort. If this flag is not provided, 'time_t' must be defined "
         "in one of the provided preprocessed header files.",
     )
+    argparser.add_argument(
+        "--time-t-sizeof-hint",
+        type=int,
+        default=None,
+        required=False,
+        help="Provide a hint of what the size of `time_t` should be in bytes."
+        "This will be used to improve the heuristics for determining its type."
+        "If `--define-time-t` is not provided this option has no effect.",
+    )
 
     args = argparser.parse_args()
 
@@ -118,7 +167,7 @@ if __name__ == "__main__":
 
     if args.define_time_t:
         print("Using heuristics to define the 'time_t' type...")  # noqa: T201
-        time_t_def = compute_time_t_definition()
+        time_t_def = compute_time_t_definition(args.time_t_sizeof_hint)
         print(f"Defining 'time_t' as: '{time_t_def}'")  # noqa: T201
         ffibuilder.cdef(time_t_def)
 
