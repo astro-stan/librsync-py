@@ -35,8 +35,15 @@ librsync_cmake_defines = {
     'BUILD_RDIFF': 'OFF', # Do not build the `rdiff` target
     'BUILD_SHARED_LIBS':'OFF',
     'CMAKE_POSITION_INDEPENDENT_CODE': 'ON',
-    'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization'),
-    'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization'),
+     # When compiling with MingGW-W64, `-Wformat` raises a compiler error
+     # when printing a `size_t` type, even though the correct format specifier
+     # is used (`%Iu`) by librsync. Normally disabling this flag to ignore the
+     # error is bad, but in this case it _should_ be okay because:
+     # - It is likely a false-positive (MS C runtime supports printing `size_t`:
+     #   https://learn.microsoft.com/en-us/cpp/c-runtime-library/format-specification-syntax-printf-and-wprintf-functions?view=msvc-170#size-prefixes-for-printf-and-wprintf-format-type-specifiers)
+     # - The relevant code is not used by the Python FFI wrapper functions
+    'CMAKE_C_FLAGS_RELEASE': '-O' + get_option('optimization') + ' -Wno-format',
+    'CMAKE_C_FLAGS_DEBUG': '-O' + get_option('optimization') + ' -Wno-format',
 }
 if get_option('debug') == true
     librsync_cmake_defines += {'CMAKE_BUILD_TYPE': 'Debug'}
@@ -124,6 +131,9 @@ header_pp_config = {
         'source_header': librsync_py_h.full_path(),
         'clean_script_args': [
             '--header-allowlist',
+                # system headers
+                'stdint.h',
+                'bits/types.h',
                 # librsync headers
                 'librsync.h',
                 'sumset.h',
@@ -140,6 +150,9 @@ header_pp_config = {
                 'checksum.h:35:62',
                 'rollsum.h:36:40',
                 'rabinkarp.h:56:60',
+
+            '--substitutions',
+                ':__extension__:'
         ],
     },
 }
@@ -236,7 +249,7 @@ python.install_sources(
         'src' / meson.project_name() / '__init__.py',
         'src' / meson.project_name() / 'common.py',
         'src' / meson.project_name() / 'exceptions.py',
-        'src' / meson.project_name() / 'statistics.py',
+        'src' / meson.project_name() / 'stats.py',
         'src' / meson.project_name() / 'stream.py',
         'src' / meson.project_name() / 'whole.py',
     ]),

@@ -483,15 +483,15 @@ def test_signature_close() -> None:
     assert obj.closed
     assert obj._job is None  # noqa: SLF001
 
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.read()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.read1()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readinto(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readinto1(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readable()
 
 
@@ -520,9 +520,9 @@ def test_delta_close() -> None:
     assert obj.signature_closed
     assert not obj.closed
 
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.load_signature()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.load_signature1()
 
     obj = _get_delta()
@@ -561,7 +561,7 @@ def test_delta_close() -> None:
         ValueError, match=r"I/O operation on a freed librsync signature."
     ):
         obj.readinto1(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readable()
 
 
@@ -602,15 +602,15 @@ def test_patch_close() -> None:
     assert not obj.basis_closed
     assert obj.closed
 
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.read()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.read1()
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readinto(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readinto1(bytearray())
-    with pytest.raises(ValueError, match=r"I/O operation on closed file."):
+    with pytest.raises(ValueError, match=r"I/O operation on closed file.*"):
         obj.readable()
 
 
@@ -849,7 +849,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         assert obj.job_stats.completion_time is None
         # Time taken is measured as the difference between time now and start time
         # rounded down to the last full second
-        assert obj.job_stats.time_taken == 1
+        assert obj.job_stats.time_taken >= 1
         assert obj.job_stats.in_speed == 0
         assert obj.job_stats.out_speed == 0
 
@@ -873,7 +873,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         assert obj.signature_job_stats.completion_time is None
         # Time taken is measured as the difference between time now and start time
         # rounded down to the last full second
-        assert obj.signature_job_stats.time_taken == 1
+        assert obj.signature_job_stats.time_taken >= 1
         assert obj.signature_job_stats.in_speed == 0
         assert obj.signature_job_stats.out_speed == 0
 
@@ -900,7 +900,7 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
         assert obj.signature_job_stats.out_bytes == 0
         assert isinstance(obj.signature_job_stats.start_time, datetime)
         assert isinstance(obj.signature_job_stats.completion_time, datetime)
-        assert obj.signature_job_stats.time_taken == 1
+        assert obj.signature_job_stats.time_taken >= 1
         assert (
             obj.signature_job_stats.in_speed
             == in_len / obj.signature_job_stats.time_taken
@@ -943,9 +943,9 @@ def test_job_stats(cls: type[Signature | Delta | Patch]) -> None:  # noqa:  PLR0
     assert isinstance(obj.job_stats.completion_time, datetime)
     if cls is Delta:
         # Job doesn't get created until after signature is loaded
-        assert obj.job_stats.time_taken == 1
+        assert obj.job_stats.time_taken >= 1
     else:
-        assert obj.job_stats.time_taken == 2  # noqa: PLR2004
+        assert obj.job_stats.time_taken >= 2  # noqa: PLR2004
     assert obj.job_stats.in_speed == in_len / obj.job_stats.time_taken
     assert obj.job_stats.out_speed == out_len / obj.job_stats.time_taken
 

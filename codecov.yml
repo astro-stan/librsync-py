@@ -1,0 +1,14 @@
+ignore:
+  - "*/tests/*"
+fixes:
+  - "*/site-packages/librsync_py::src/librsync_py"
+github_checks:
+  annotations: true
+
+coverage:
+  range: 70..90 # coverage lower than 50 is red, higher than 90 green, between color code
+  status:
+    project:
+      default:
+        target: auto # auto % coverage target
+        threshold: 5%  # allow for 5% reduction of coverage without failing

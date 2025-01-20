@@ -263,7 +263,7 @@ class _Job(io.BufferedIOBase):
                     result, written = self._process_raw(mv, read1=read1)
                     chunks.append(mv[:written].tobytes())
                     total_length += written
-                    if (total_length >= size and size >= 0) or read1:
+                    if (total_length >= size >= 0) or read1:
                         break
 
             # Join all chunks at once
