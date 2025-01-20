@@ -144,7 +144,7 @@ def process_header(
     # Matches strings like:
     # `# 27 "/usr/include/x86_64-linux-gnu/bits/types.h"`
     # `C:/mingw64/x86_64-w64-mingw32/include/assert.h`
-    # `D:\\what\\the\\f\\types.h`
+    # `D:\\librsync_py\\include\\librsync.h`
     # With capture groups for the line number and file path
     file_location_directive_regex = re.compile(
         r"\s*#\s+(\d+)\s+\"((?:(?:\w\:)?(?:\/|\\\\)[^\/(?:\\\\)]+)+)\""
